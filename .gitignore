@@ -1,0 +1,6 @@
+cache.json
+pyenv/
+PRIVATE/
+__pycache__/
+*.swp
+*~

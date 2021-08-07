@@ -1,0 +1,5 @@
+# pip requirements file for finitude
+#
+# pip install -r req.txt
+
+pyserial
