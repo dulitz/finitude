@@ -11,6 +11,7 @@ import serial
 import select
 import socket
 import struct
+import sys
 import time
 
 
@@ -60,6 +61,10 @@ class SocketStream:
     self.sock = socket.create_connection(self.hostport, timeout=self.timeout)
 
   def read(self, numbytes):
+    """Raises socket.timeout if no data is received within the timeout.
+    If data is received but synchronization does not occur, the timeout will not trigger.
+    If read() returns b'', the remote end closed the connection cleanly.
+    """
     b = self.sock.recv(numbytes)
     if not b:
       self.close()
@@ -110,11 +115,17 @@ class Bus:
     """Read data until self.buf is at least size characters.
     """
     while len(self.buf) < size:
-      self.buf += self.stream.read(size - len(self.buf))
+      readbytes = self.stream.read(size - len(self.buf))
+      if not readbytes:
+        raise CarrierError('connection closed [no data] while reading')
+      self.buf += readbytes
 
   def read(self):
     """Discard data until we find a valid frame boundary. Return the first valid frame,
-       leaving any residual data in self.buf.
+    leaving any residual data in self.buf.
+
+    SocketStream may raise socket.timeout. Raises CarrierError if remote end closes the
+    connection.
     """
     # make sure we have enough data in the buffer to check for the size of the frame
     self._read_until(10)
@@ -129,155 +140,131 @@ class Bus:
         self.buf = self.buf[frame_len:]
         self.lastfunc = frame[7]
         return frame
-      print('.', end='')
+      print('.', end='', file=sys.stderr)
       self.buf = self.buf[1:]
 
   def write(self, data):
-    # nonblocking call to test when it is ok to write - then write if OK
-    # return 0 = no action
-    # return 1 = item written
-
+    """If data can be read without blocking, or if the last frame was something other than
+    ACK06, return False immediately. Otherwise write data and return True. Note that this
+    relies on there being a thermostat or SAM in the system to make requests that are ACKed.
+    """
     assert data
-
-    if (not self.stream.can_read) and self.lastfunc == 0x06:
+    if (not self.stream.can_read) and self.lastfunc == ParsedFrame.ACK06:
       self.stream.write(data)
-      return 1
-    return 0
-    
+      return True
+    return False
 
-class OldFrame:
-  """A frame from the bus."""
-  
-  def __init__(self, data, type, dst='', src='', func=''):
-    self.crcer = CRC16()
-    if type == "B": # binary
-      self.raw = data
-    if type == "S": # string
-      self.raw = HexToByte(data)
-    if type == "C": # create frame
-      self.len_int = len(data) / 2
-      self.len = "{0:02X}".format(self.len_int)
-      # formatting string:
-      #   0: first parameter
-      #   0  fill with zeros
-      #   2  fill to n chars
-      #   x  hex, uppercase
-      self.raw = HexToByte(dst + src + self.len + '0000' + func + data) 
 
-    # parse out the parts of the frame  
-    self.dst = ByteToHex(self.raw[0:2])
-    self.src = ByteToHex(self.raw[2:4])
-    self.len = ByteToHex(self.raw[4])
-    self.len_int = int(self.len, 16)
-    self.func = ByteToHex(self.raw[7])
-    self.ts = time.clock()
-    
-    # the length of the entire frame minus 8 for the header and 2 for the crc
-    # should be the length given in the frame
-    if len(self.raw) - 8 - 2 == self.len_int:
-      # if this frame already has a CRC, check it
-      self.data = ByteToHex(self.raw[8:8+self.len_int])
-      self.crc = ByteToHex(self.raw[8+self.len_int:]) 
-      # check crc
-      crc16 = self.crcer.calculate(self.raw[:8+self.len_int])
-      self.crccalc = ByteToHex(struct.pack('<H', crc16))
-      # TODO put a flag for valid CRC
+class AssembledFrame:
+  def __init__(self, dest, source, func, data=b'', crc=None, pid=0, ext=0):
+    length = len(data)
+    assert length <= 255, length
+    self.frame = b''.join([dest, source, bytes([length, pid, ext, func]), data])
+    crcer = CRC16()
+    self.crc = crcer.calculate(self.frame)
+    if crc is not None:
+      assert crc == self.crc, (crc, self.crc)
+
+  @property
+  def framebytes(self):
+    return self.frame + struct.pack('<H', self.crc)
+
+
+class ParsedFrame:
+  def __init__(self, framebytes):
+    self.framebytes = framebytes
+    # frame is 8 byte header, self.length data bytes, and 2 byte CRC
+    assert len(self.framebytes) == 8 + self.length + 2, (len(self.framebytes), self.length+10)
+
+  @property
+  def dest(self):
+    """First byte is the address, second byte is the bus. Bus is always 0x1."""
+    return self.framebytes[0:2]
+
+  @property
+  def source(self):
+    """First byte is the address, second byte is the bus. Bus is always 0x1."""
+    return self.framebytes[2:4]
+
+  @property
+  def length(self):
+    return self.framebytes[4]
+
+  @property
+  def pid(self):
+    """PID is always zero."""
+    return self.framebytes[5]
+
+  @property
+  def ext(self):
+    """EXT is always zero."""
+    return self.framebytes[6]
+
+  @property
+  def func(self):
+    return self.framebytes[7]
+
+  @property
+  def data(self):
+    return self.framebytes[8:8+self.length]
+
+  def is_crc_valid(self):
+    crcer = CRC16()
+    dataend = 8 + self.length
+    calculated_crc = crcer.calculate(self.framebytes[0:dataend])
+    stored_crc = struct.unpack('<H', self.framebytes[dataend:dataend+2])[0]
+    return calculated_crc == stored_crc
+
+  ACK02 = 0x02
+  ACK06 = 0x06
+  READ = 0x0b
+  WRITE = 0x0c
+  NACK = 0x15
+  ALARM = 0x1e
+  CHGTBN = 0x10
+  FNAMES = {
+    ACK02: 'ACK02',
+    ACK06: 'ACK06',
+    READ: 'READ',
+    WRITE: 'WRITE',
+    CHGTBN: 'CHGTBN',  # change table name
+    NACK: 'NACK',
+    ALARM: 'ALARM',
+    0x22: 'RDOBJ',
+    0x62: 'RDVAR',
+    0x63: 'FORCE',
+    0x64: 'AUTO',
+    0x75: 'LIST',
+    }
+  def get_function_name(self):
+    return self.FNAMES.get(self.func, 'UNKNOWN')
+
+  @staticmethod
+  def get_printable_address(source_or_dest):
+    address = source_or_dest[0]*256 + source_or_dest[1]
+    return hex(address)
+
+  def __str__(self):
+    pid = f' {self.pid}' if self.pid else ''
+    ext = f' {self.ext}' if self.ext else ''
+    if self.func == ParsedFrame.READ:
+      data = f'register {bytestohex(self.data)}'
+    elif self.func == ParsedFrame.WRITE or self.func == ParsedFrame.ACK06:
+      data = f'register {bytestohex(self.data[0:3])} value {bytestohex(self.data[3:])} {self.data[3:] if len(self.data) > 4 else ""}'
     else:
-      # if it does not have a CRC, add it (used when making frames)
-      crc16 = self.crcer.calculate(self.raw)
-      self.crc = ByteToHex(struct.pack('<H', crc16)) 
-      self.raw += struct.pack('<H', crc16)
-      self.data = ByteToHex(self.raw[8:8+self.len_int])
-
-  def __str__(self):
-    return self.raw
+      data = self.data
+    crc = '' if self.is_crc_valid() else ' CRC BAD'
+    return f'to {self.get_printable_address(self.dest)} from {self.get_printable_address(self.source)} len {self.length}{pid}{ext} {self.get_function_name()}({hex(self.func)}) {data}{crc}'
 
 
-class queueitem:
-  'a single item to put on the bus - used in the queue'
-  #the response is intentionally filled with garbage to start
-  def __init__(self, f):
-    self.frame = f
-    self.response = frame('000130010100000B000000','S')
-    self.done = False
-  
-  def __str__(self):
-    return f'{self.frame} {self.response} {self.done}'
+def bytestohex(rbytes):
+  return ''.join(['%02x' % b for b in rbytes]) if rbytes else str(rbytes)
 
-class writequeue:
-  'a queue to hold items and their responses to/from the bus'
-  def __init__(self):
-    self.queue = {}
-    self.index = 0
-  
-  #put a new frame on the queue
-  def pushframe(self,f):
-    self.queue[self.index] = queueitem(f) 
-    self.index+=1
-    return self.index-1 
-  
-  #take any frame and see if it is a response
-  #this should be checked immediately after writing the frame for best results
-  #this depends on writeframe() returning the same thing when it was called to write
-  #  and the following frame is the response based on a swapped src/dst.
-  #  this is the best we can do since an error can be a response and there is no for sure match
-  def checkframe(self,frame):
-    for k,v in self.queue.iteritems():
-      if v.frame.src==frame.dst and v.frame.dst==frame.src and v.frame.raw==self.writeframe():
-        v.response = frame
-        v.done = True
-        break
-  
-  #return raw frame to be written to the bus
-  def writeframe(self):
-    for k in sorted(self.queue.keys()):
-      if self.queue[k].done==False:
-        return self.queue[k].frame.raw
-        break
-    return ''
-  
-  #test function to force all items done
-  def test(self):
-    for k,v in self.queue.iteritems():
-      v.done = True    
-  
-  #print the queue
-  def printqueue(self):
-    for k,v in self.queue.iteritems():
-      print(k, str(v))
-
-  def __str__(self):
-    r = ""
-    for k,v in self.queue.iteritems():
-      r += str(k) + " " + str(v) + '\n'
-    return r
-	  
-  def printstatus(self):
-    total = len(self.queue)
-    done = 0
-    for k,v in self.queue.iteritems():
-      if v.done==True:
-        done+=1
-    return str(done)+'/'+str(total)
-	
-# from http://code.activestate.com/recipes/510399-byte-to-hex-and-hex-to-byte-string-conversion/
-
-def ByteToHex(data):
-  """Given a bytes object data, returns a string of hex digits, two digits per byte in data."""
-  return ''.join(['%02X' % x for x in data])
-
-def HexToByte(hex):
-  """Given a string of hex digits, two digits per byte, returns a bytes object."""
-  data = []
-  nospaces = ''.join(hex.split(' '))
-  for i in range(0, len(nospaces), 2):
-    data.append(int(nospaces[i:i+2], 16))
-  return bytes(data)
-
-# table based CRC calculation from
-# http://www.digi.com/wiki/developer/index.php/Python_CRC16_Modbus_DF1
 
 class CRC16:
+  """Table based CRC calculation from
+     http://www.digi.com/wiki/developer/index.php/Python_CRC16_Modbus_DF1
+  """
   TABLE = (
     0x0000, 0xC0C1, 0xC181, 0x0140, 0xC301, 0x03C0, 0x0280, 0xC241,
     0xC601, 0x06C0, 0x0780, 0xC741, 0x0500, 0xC5C1, 0xC481, 0x0440,
@@ -323,10 +310,13 @@ class CRC16:
       crc = self._calculate_one_cycle(b, crc)
     return crc
 
+
 def main(args):
   stream = StreamFactory(args[1])
   bus = Bus(stream)
-  print(bus.read())
+  while True:
+    frame = ParsedFrame(bus.read())
+    print(frame)
 
 if __name__ == '__main__':
     import sys
