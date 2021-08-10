@@ -1,5 +1,7 @@
 """
-originally from https://github.com/3tones/brybus
+frames.py -- framing protocol for Carrier Infinity and Bryant Evolution HVAC systems.
+
+Portions based on https://github.com/3tones/brybus
 
 See also https://github.com/nebulous/infinitude/issues/115
 and https://github.com/Will1604/infinitive for some fixes to infinitive in Go
@@ -13,6 +15,8 @@ import socket
 import struct
 import sys
 import time
+
+from enum import IntEnum
 
 
 class CarrierError(Exception):
@@ -149,7 +153,7 @@ class Bus:
     relies on there being a thermostat or SAM in the system to make requests that are ACKed.
     """
     assert data
-    if (not self.stream.can_read) and self.lastfunc == ParsedFrame.ACK06:
+    if (not self.stream.can_read) and self.lastfunc == Function.ACK06:
       self.stream.write(data)
       return True
     return False
@@ -215,46 +219,46 @@ class ParsedFrame:
     stored_crc = struct.unpack('<H', self.framebytes[dataend:dataend+2])[0]
     return calculated_crc == stored_crc
 
-  ACK02 = 0x02
-  ACK06 = 0x06
-  READ = 0x0b
-  WRITE = 0x0c
-  NACK = 0x15
-  ALARM = 0x1e
-  CHGTBN = 0x10
-  FNAMES = {
-    ACK02: 'ACK02',
-    ACK06: 'ACK06',
-    READ: 'READ',
-    WRITE: 'WRITE',
-    CHGTBN: 'CHGTBN',  # change table name
-    NACK: 'NACK',
-    ALARM: 'ALARM',
-    0x22: 'RDOBJ',
-    0x62: 'RDVAR',
-    0x63: 'FORCE',
-    0x64: 'AUTO',
-    0x75: 'LIST',
-    }
   def get_function_name(self):
-    return self.FNAMES.get(self.func, 'UNKNOWN')
+    try:
+      return Function(self.func).name
+    except ValueError:
+      return f'UNKNOWN({self.func})'
 
   @staticmethod
   def get_printable_address(source_or_dest):
     address = source_or_dest[0]*256 + source_or_dest[1]
     return hex(address)
 
+  REGISTER_TO_NAME = {
+    
+    }
   def __str__(self):
     pid = f' {self.pid}' if self.pid else ''
     ext = f' {self.ext}' if self.ext else ''
-    if self.func == ParsedFrame.READ:
+    if self.func == Function.READ:
       data = f'register {bytestohex(self.data)}'
-    elif self.func == ParsedFrame.WRITE or self.func == ParsedFrame.ACK06:
+    elif self.func == Function.WRITE or self.func == Function.ACK06:
       data = f'register {bytestohex(self.data[0:3])} value {bytestohex(self.data[3:])} {self.data[3:] if len(self.data) > 4 else ""}'
     else:
       data = self.data
     crc = '' if self.is_crc_valid() else ' CRC BAD'
     return f'to {self.get_printable_address(self.dest)} from {self.get_printable_address(self.source)} len {self.length}{pid}{ext} {self.get_function_name()}({hex(self.func)}) {data}{crc}'
+
+
+class Function(IntEnum):
+  ACK02 = 0x02
+  ACK06 = 0x06
+  READ = 0x0b
+  WRITE = 0x0c
+  NACK = 0x15
+  ALARM = 0x1e
+  CHGTBN = 0x10  # change table name
+  RDOBJ = 0x22
+  RDVAR = 0x62
+  FORCE = 0x63
+  AUTO = 0x64
+  LIST = 0x75
 
 
 def bytestohex(rbytes):
