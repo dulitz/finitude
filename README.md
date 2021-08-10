@@ -8,8 +8,12 @@ HVAC systems.
 An HVAC system consumes a lot of energy. You might want to know how hard it's working,
 how often it's running, whether it's running when your windows are open...
 
-Carrier's apps are crappy and they no longer even have a functioning website. Plus it's nice
+Carrier's apps are crappy and they no longer even have a functioning webapp. Plus it's nice
 to be able to monitor your equipment without relying on connectivity to Carrier's servers.
+
+Carrier's SAM module provides significant information about the modes of the system. But it
+does not report the state of the system: when heating and cooling are actually operating,
+the current fan speed, etc.
 
 ## Based On
 
