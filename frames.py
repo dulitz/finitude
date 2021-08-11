@@ -16,7 +16,7 @@ import struct
 import sys
 import time
 
-from enum import IntEnum
+from enum import Enum, IntEnum
 
 
 class CarrierError(Exception):
@@ -110,8 +110,9 @@ class Bus:
   After creating an instance, call read() repeatedly to read an entire frame.
   """
 
-  def __init__(self, stream):
+  def __init__(self, stream, report_crc_error=None):
     self.stream = stream
+    self.report_crc_error = report_crc_error
     self.lastfunc = None
     self.buf = b''
 
@@ -144,7 +145,8 @@ class Bus:
         self.buf = self.buf[frame_len:]
         self.lastfunc = frame[7]
         return frame
-      print('.', end='', file=sys.stderr)
+      if self.report_crc_error:
+        self.report_crc_error()
       self.buf = self.buf[1:]
 
   def write(self, data):
@@ -172,6 +174,15 @@ class AssembledFrame:
   @property
   def framebytes(self):
     return self.frame + struct.pack('<H', self.crc)
+
+
+class Field(Enum):
+    UNKNOWN = 0
+    UTF8 = 1   # NUL-padded at the end
+    NAME = 2   # 12-byte NUL-padded UTF-8 name
+    UINT8 = 3
+    INT8 = 4
+    UINT16 = 5
 
 
 class ParsedFrame:
@@ -230,18 +241,99 @@ class ParsedFrame:
     address = source_or_dest[0]*256 + source_or_dest[1]
     return hex(address)
 
-  REGISTER_TO_NAME = {
-    
+  # register info from https://github.com/acd/infinitive/blob/master/infinitive.go
+  # and https://github.com/acd/infinitive/blob/master/tables.go
+  REPEATED_8_ZONES = 0
+  REGISTER_INFO = {
+    '000104': ('DeviceInfo', [(48, Field.UTF8, 'Module'), (16, Field.UTF8, 'Firmware'), (20, Field.UTF8, 'Model'), (36, Field.UTF8, 'Serial')]),
+    '000306': ('AirHandler06', [(1, Field.UNKNOWN), (1, Field.UINT16, 'BlowerRPM')]),
+    # State & 0x03 != 0 when electric heat is on
+    '000316': ('AirHandler16', [(1, Field.UINT8, 'State'), (3, Field.UNKNOWN), (1, Field.UINT16, 'AirflowCFM')]),
+    # changes from infinitive: first 3 unknown bytes
+    '003b02': ('TStatCurrentParams', [(3, Field.UNKNOWN), (REPEATED_8_ZONES, Field.UINT8, 'CurrentTemp'), (REPEATED_8_ZONES, Field.UINT8, 'CurrentHumidity'), (1, Field.UNKNOWN), (1, Field.INT8, 'OutdoorAirTemp'), (1, Field.UINT8, 'ZonesUnoccupied'), (1, Field.UINT8, 'Mode'), (5, Field.UNKNOWN), (1, Field.UINT8, 'DisplayedZone')]),
+    # changes from infinitive: first 3 unknown bytes
+    '003b03': ('TStatZoneParams', [(3, Field.UNKNOWN), (REPEATED_8_ZONES, Field.UINT8, 'FanMode'), (1, Field.UINT8, 'ZonesHolding'), (REPEATED_8_ZONES, Field.UINT8, 'CurrentHeatSetpoint'), (REPEATED_8_ZONES, Field.UINT8, 'CurrentCoolSetpoint'), (REPEATED_8_ZONES, Field.UINT8, 'CurrentHumiditySetpoint'), (1, Field.UINT8, 'FanAutoConfig'), (1, Field.UNKNOWN), (REPEATED_8_ZONES, Field.UINT16, 'HoldDuration'), (REPEATED_8_ZONES, Field.NAME, 'Name')]),
+    '003b04': ('TStatVacationParams', [(1, Field.UINT8, 'Active'), (1, Field.UINT16, 'DaysTimes7'), (1, Field.UINT8, 'MinTemp'), (1, Field.UINT8, 'MaxTemp'), (1, Field.UINT8, 'MinHumidity'), (1, Field.UINT8, 'MaxHumidity'), (1, Field.UINT8, 'FanMode')]),
+    '003e01': ('HeatPump01', [(1, Field.UINT16, 'OutsideTempTimes16'), (1, Field.UINT16, 'CoilTempTimes16')]),
+    # shift StageShift1 right by one bit to get the stage number
+    # higher stage numbers correspond to auxilliary heat on
+    '003e02': ('HeatPump02', [(1, Field.UINT8, 'StageShift1')]),
     }
+  def _get_register_info(self):
+    assert (self.func == Function.READ or
+            self.func == Function.WRITE or
+            self.func == Function.ACK06), self.func
+    assert self.length >= 3, self.length
+    k = bytestohex(self.data[0:3])
+    k2 = k[2:] if k.startswith('00') else k
+    (name, fmt) = self.REGISTER_INFO.get(k, ('register', []))
+    return (f'{name}({k2})', fmt)
+
+  def get_register(self):
+    if (self.func == Function.READ or
+        self.func == Function.WRITE or
+        self.func == Function.ACK06) and self.length >= 3:
+      k = bytestohex(self.data[0:3])
+      name = self.REGISTER_INFO.get(k, (None, []))[0]
+      return name if name is not None else k[2:] if k.startswith('00') else k
+    return None
+
+  def get_printable_register(self):
+    return self._get_register_info()[0]
+
+  def parse_register(self):
+    def parse_field(cursor, reps, field):
+      if field == Field.NAME:
+        assert reps == 1, (reps, field)
+        reps, field = 12, Field.UTF8
+      if field == Field.UTF8:
+        assert reps > 0, (reps, field)
+        return (cursor[0:reps].decode().strip('\0'), cursor[reps:])
+      assert reps == 1, (reps, field)
+      if field == Field.UINT8:
+        return (cursor[0], cursor[1:])
+      if field == Field.INT8:
+        return (struct.unpack('>b', cursor[0:1])[0], cursor[1:])
+      if field == Field.UINT16:
+        return (struct.unpack('>H', cursor[0:2])[0], cursor[2:])
+      assert False, (reps, field)
+
+    (name, fmt) = self._get_register_info()
+    if not fmt:
+      return (name, {}, self.data)
+    cursor = self.data[3:]
+    values = {}
+    for (reps, field, *fieldname) in fmt:
+      if reps == self.REPEATED_8_ZONES:
+        assert len(fieldname) == 1, (reps, field, *fieldname)
+        for zone in range(8):
+          (value, cursor) = parse_field(cursor, 1, field)
+          values[f'Zone{zone+1}{fieldname[0]}'] = value
+      elif field == Field.UNKNOWN:
+        assert not fieldname, (reps, field, *fieldname)
+        assert reps > 0, (reps, field, *fieldname)
+        cursor = cursor[reps:]
+      else:
+        assert len(fieldname) == 1, (reps, field, *fieldname)
+        (value, cursor) = parse_field(cursor, reps, field)
+        assert fieldname[0] not in values, (values, (reps, field, *fieldname))
+        values[fieldname[0]] = value
+    return (name, values, cursor)
+
   def __str__(self):
     pid = f' {self.pid}' if self.pid else ''
     ext = f' {self.ext}' if self.ext else ''
     if self.func == Function.READ:
-      data = f'register {bytestohex(self.data)}'
-    elif self.func == Function.WRITE or self.func == Function.ACK06:
-      data = f'register {bytestohex(self.data[0:3])} value {bytestohex(self.data[3:])} {self.data[3:] if len(self.data) > 4 else ""}'
+      data = self.get_printable_register()
+    elif self.func == Function.WRITE:
+      data = f'{self.get_printable_register()} value {bytestohex(self.data[3:])} {self.data[3:] if len(self.data) > 4 else ""}'
+    elif self.func == Function.ACK06 and len(self.data) > 3:
+      (name, values, remainbytes) = self.parse_register()
+      valstr = ', '.join([f'{k}:{repr(v)}' for (k, v) in values.items()])
+      remainder = f'{bytestohex(remainbytes)} {remainbytes}' if remainbytes else ''
+      data = f'{name} values {remainder}' if not values else f'{name} {valstr} unparsed:{remainder}' if remainder else f'{name} {valstr}'
     else:
-      data = self.data
+      data = f'{bytestohex(self.data)} {self.data if len(self.data) > 3 else ""}'
     crc = '' if self.is_crc_valid() else ' CRC BAD'
     return f'to {self.get_printable_address(self.dest)} from {self.get_printable_address(self.source)} len {self.length}{pid}{ext} {self.get_function_name()}({hex(self.func)}) {data}{crc}'
 
@@ -259,6 +351,22 @@ class Function(IntEnum):
   FORCE = 0x63
   AUTO = 0x64
   LIST = 0x75
+
+
+class FanMode(IntEnum):
+  AUTO = 0
+  LOW = 1
+  MEDIUM = 2
+  HIGH = 3
+
+
+class HvacMode(IntEnum):
+  HEAT = 0      # heat source: "system in control"
+  COOL = 1
+  AUTO = 2
+  ELECTRIC = 3  # heat source: electric only FIXME: is this furnace also?
+  HEATPUMP = 4  # heat source: heat pump only
+  OFF = 5
 
 
 def bytestohex(rbytes):
@@ -317,7 +425,7 @@ class CRC16:
 
 def main(args):
   stream = StreamFactory(args[1])
-  bus = Bus(stream)
+  bus = Bus(stream, report_crc_error=lambda: print('.', end='', file=sys.stderr))
   while True:
     frame = ParsedFrame(bus.read())
     print(frame)

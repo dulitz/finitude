@@ -10,15 +10,17 @@ Track all other packets.
 
 import frames
 
-import time
+import socket
 import sys
+import time
 
 get_printable_address = frames.ParsedFrame.get_printable_address
 
 class Sniffer:
     def __init__(self, stream):
         self.stream = stream
-        self.bus = frames.Bus(stream)
+        self.bus = frames.Bus(stream, report_crc_error=lambda: print('.', end='', file=sys.stderr))
+
         self.devices = set()
         self.readsource_to_dests = {}
         self.readdest_to_sourceregisters = {}
@@ -68,7 +70,7 @@ def main(args, outputfile):
             nframes += 1
             if 0 == nframes % 100:
                 print(f'{nframes}: {len(sniffer.devices)} devices, {len(sniffer.otherframes)} other frames', file=outputfile)
-    except Exception as ex:
+    except socket.timeout as ex:
         print(f'caught exception {ex}', file=outputfile)
     except KeyboardInterrupt as ex:
         print(f'caught KeyboardInterrupt', file=outputfile)
