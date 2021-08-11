@@ -1,0 +1,3 @@
+port: 8000
+listeners:
+- 'telnet://localhost:2626'

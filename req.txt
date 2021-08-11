@@ -3,3 +3,5 @@
 # pip install -r req.txt
 
 pyserial
+prometheus_client
+PyYAML
