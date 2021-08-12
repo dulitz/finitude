@@ -193,10 +193,10 @@ def start_sniffserver(port, monitors):
             for m in monitors:
                 index_frame = sorted([(i, f) for (f, i) in m.frame_to_index.items()])
                 assert index_frame[0][0] == 1, index_frame[0]
-                self.lastindex_by_name = {}
+                lastindex_by_name = {}
                 frames = []
                 for (t, name, index) in m.frames:
-                    last = self.lastindex_by_name.get(name)
+                    last = lastindex_by_name.get(name)
                     if last is None:
                         frames.append((t, name, index, None))
                     else:
@@ -212,7 +212,7 @@ def start_sniffserver(port, monitors):
                             if len(changes) > 8:
                                 changes = len(changes)
                             frames.append((t, name, index, changes))
-                    self.lastindex_by_name[name] = index
+                    lastindex_by_name[name] = index
                 js[m.name] = {
                     'frames_by_index': [None] + [frames.bytestohex(f) for (i, f) in index_frame],
                     'sequence': frames,
