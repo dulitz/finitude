@@ -200,7 +200,7 @@ def start_sniffserver(port, monitors):
         return [output]
 
     LOGGER.info(f'serving sniffed data on {port}')
-    httpd = make_server(addr, port, app, _ThreadingWSGISniffServer)
+    httpd = make_server('', port, app, _ThreadingWSGISniffServer)
     t = threading.Thread(target=httpd.serve_forever)
     t.start()
 
