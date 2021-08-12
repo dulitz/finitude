@@ -124,7 +124,7 @@ class HvacMonitor:
                 gauge = HvacMonitor.GAUGES.get(name)
                 if gauge is None:
                     gauge = prometheus_client.Gauge(name, desc, ['name'] + morelabels)
-                    HvacMonitor.GAUGES[gaugename] = gauge
+                    HvacMonitor.GAUGES[name] = gauge
                 return gauge
 
             if itemname == 'Mode' and not tablename:
