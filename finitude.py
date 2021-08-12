@@ -200,8 +200,8 @@ def start_sniffserver(port, monitors):
                     if last is None:
                         outframes.append((t, name, index, None))
                     else:
-                        lastdata = index_frame[last][1]
-                        thisdata = index_frame[index][1]
+                        lastdata = index_frame[last-1][1]
+                        thisdata = index_frame[index-1][1]
                         if len(lastdata) != len(thisdata):
                             changes = f'len {len(lastdata)}->{len(thisdata)}'
                         else:
