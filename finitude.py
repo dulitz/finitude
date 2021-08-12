@@ -191,9 +191,31 @@ def start_sniffserver(port, monitors):
             header = ('Content-type', 'application/json')
             js = {}
             for m in monitors:
+                index_frame = sorted([(i, f) for (f, i) in m.frame_t_index.items()])
+                assert index_frame[0][0] == 1, index_frame[0]
+                self.lastindex_by_name = {}
+                frames = []
+                for (t, name, index) in m.frames:
+                    last = self.lastindex_by_name.get(name)
+                    if last is None:
+                        frames.append((t, name, index, None))
+                    else:
+                        lastdata = index_frame[last][1]
+                        thisdata = index_frame[index][1]
+                        if len(lastdata) != len(thisdata):
+                            changes = f'len {len(lastdata)}->{len(thisdata)}'
+                        else:
+                            changes = []
+                            for (last, this, i) in zip(lastdata, thisdata, range(len(lastdata))):
+                                if last != this:
+                                    changes.append(f'{i}[{hex(last)}->{hex(this)}]'(i, last, this))
+                            if len(changes) > 8:
+                                changes = len(changes)
+                            frames.append((t, name, index, changes))
+                    self.lastindex_by_name[name] = index
                 js[m.name] = {
-                    'frame_to_index': m.frame_to_index,
-                    'frames': m.frames
+                    'frames_by_index': [None] + [frames.bytestohex(f) for (i, f) in index_frame],
+                    'sequence': frames,
                 }
             output = json.dumps(js).encode()
 
