@@ -22,20 +22,20 @@ LOGGER = logging.getLogger('finitude')
 
 class HvacMonitor:
     FRAME_COUNT = prometheus_client.Counter('finitude_frames',
-                                            'number of frames received', ['path'])
+                                            'number of frames received', ['name'])
     IS_SYNC = prometheus_client.Gauge('finitude_synchronized',
-                                      '1 if reader is synchronized to bus', ['path'])
+                                      '1 if reader is synchronized to bus', ['name'])
     DESYNC_COUNT = prometheus_client.Counter('finitude_desyncs',
-                                             'number of desynchronizations', ['path'])
+                                             'number of desynchronizations', ['name'])
     RECONNECT_COUNT = prometheus_client.Counter('finitude_reconnects',
-                                                'number of stream reconnects', ['path'])
+                                                'number of stream reconnects', ['name'])
     STORED_FRAMES = prometheus_client.Gauge('finitude_stored_frames',
-                                            'number of frames stored', ['path'])
+                                            'number of frames stored', ['name'])
     FRAME_SEQUENCE_LENGTH = prometheus_client.Gauge('finitude_frame_sequence_length',
-                                                    'length of sequence', ['path'])
+                                                    'length of sequence', ['name'])
     DEVINFO = prometheus_client.Info('finitude_device',
                                      'info table from each device on the bus',
-                                     ['path', 'device'])
+                                     ['name', 'device'])
     TABLE_NAME_MAP = {
         'AirHandler06': 'airhandler',
         'AirHandler16': 'airhandler',
@@ -48,23 +48,23 @@ class HvacMonitor:
     GAUGES = {}
     CV = threading.Condition()
 
-    def __init__(self, path):
-        self.path = path
+    def __init__(self, name, path):
+        self.name, self.path = name, path
         self.stream, self.bus = None, None
         self.synchronized = False
         self.register_to_rest = {}
         self.frame_to_index = {}
         self.frames = []  # squashed
-        HvacMonitor.IS_SYNC.labels(path=self.path).set_function(lambda s=self: s.synchronized)
-        HvacMonitor.STORED_FRAMES.labels(path=self.path).set_function(lambda s=self: len(s.frame_to_index))
-        HvacMonitor.FRAME_SEQUENCE_LENGTH.labels(path=self.path).set_function(lambda s=self: len(s.frames))
+        HvacMonitor.IS_SYNC.labels(name=self.name).set_function(lambda s=self: s.synchronized)
+        HvacMonitor.STORED_FRAMES.labels(name=self.name).set_function(lambda s=self: len(s.frame_to_index))
+        HvacMonitor.FRAME_SEQUENCE_LENGTH.labels(name=self.name).set_function(lambda s=self: len(s.frames))
 
     def open(self):
-        LOGGER.info(f'connecting to {self.path}')
+        LOGGER.info(f'connecting to {self.name} at {self.path}')
         self.stream = frames.StreamFactory(self.path)
         self.bus = frames.Bus(self.stream, report_crc_error=self._report_crc_error)
 
-        HvacMonitor.RECONNECT_COUNT.labels(path=self.path).inc()
+        HvacMonitor.RECONNECT_COUNT.labels(name=self.name).inc()
 
     def process_frame(self, frame):
         self.synchronized = True
@@ -73,7 +73,7 @@ class HvacMonitor:
             (basename, paren, num) = name.partition('(')
             if values:
                 if basename == 'DeviceInfo':
-                    self.DEVINFO.labels(path=self.path, device=frames.ParsedFrame.get_printable_address(frame.source)).info(values)
+                    self.DEVINFO.labels(name=self.name, device=frames.ParsedFrame.get_printable_address(frame.source)).info(values)
                 else:
                     tablename = self.TABLE_NAME_MAP.get(basename, basename)
                     for (k, v) in values.items():
@@ -86,10 +86,10 @@ class HvacMonitor:
         if lastrest == (rest or None):
             return
         self.register_to_rest[name] = rest
-        index = self.frame_to_index.get(frame)
+        index = self.frame_to_index.get(frame.data)
         if index is None:
             index = len(self.frame_to_index) + 1
-            self.frame_to_index[frame] = index
+            self.frame_to_index[frame.data] = index
         self.frames.append((time.time(), name, index))
 
     def _set_gauge(self, tablename, itemname, v):
@@ -118,14 +118,14 @@ class HvacMonitor:
         with HvacMonitor.CV:
             gauge = HvacMonitor.GAUGES.get(gaugename)
             if gauge is None:
-                gauge = prometheus_client.Gauge(gaugename, desc, ['path'])
+                gauge = prometheus_client.Gauge(gaugename, desc, ['name'])
                 HvacMonitor.GAUGES[gaugename] = gauge
-            gauge.labels(path=self.path).set(v / divisor)
+            gauge.labels(name=self.name).set(v / divisor)
 
     def _report_crc_error(self):
         if self.synchronized:
             self.synchronized = False
-            HvacMonitor.DESYNC_COUNT.labels(path=self.path).inc()
+            HvacMonitor.DESYNC_COUNT.labels(name=self.name).inc()
 
     def run(self):
         self.open()  # at startup, fail if we can't open
@@ -134,7 +134,7 @@ class HvacMonitor:
                 if self.stream is None:
                     self.open()
                 frame = frames.ParsedFrame(self.bus.read())
-                HvacMonitor.FRAME_COUNT.labels(path=self.path).inc()
+                HvacMonitor.FRAME_COUNT.labels(name=self.name).inc()
                 self.process_frame(frame)
             except OSError:
                 LOGGER.exception('exception in frame processor, reconnecting')
@@ -155,12 +155,12 @@ class Finitude:
         LOGGER.info(f'serving on port {port}')
         prometheus_client.start_http_server(port)
 
-    def start_listeners(self, listeners=[]):
+    def start_listeners(self, listeners={}):
         if not listeners:
             listeners = self.config['listeners']
-        for path in listeners:
-            monitor = HvacMonitor(path)
-            threading.Thread(target=monitor.run, name=path).start()
+        for (name, path) in listeners.items():
+            monitor = HvacMonitor(name, path)
+            threading.Thread(target=monitor.run, name=name).start()
 
 
 def main(args):

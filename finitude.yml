@@ -1,3 +1,4 @@
 port: 8000
 listeners:
-- 'telnet://localhost:2626'
+  upperlevel: 'telnet://localhost:2626'
+  # lowerlevel: /dev/ttyUSB0
