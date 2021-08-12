@@ -8,7 +8,10 @@ Prometheus can query us very often (every second if desired) because we are
 constantly listening to the HVAC's RS-485 bus and updating our internal state.
 """
 
-import logging, prometheus_client, threading, time, yaml
+import json, logging, prometheus_client, threading, time, yaml
+
+from socketserver import ThreadingMixIn
+from wsgiref.simple_server import make_server, WSGIRequestHandler, WSGIServer
 
 import frames
 
@@ -149,19 +152,57 @@ class Finitude:
         if not port:
             self.config['port'] = 8000
 
-    def start_http_server(self, port=0):
+    def start_metrics_server(self, port=0):
         if not port:
             port = self.config['port']
-        LOGGER.info(f'serving on port {port}')
+        LOGGER.info(f'serving metrics on port {port}')
         prometheus_client.start_http_server(port)
 
     def start_listeners(self, listeners={}):
         if not listeners:
             listeners = self.config['listeners']
-        for (name, path) in listeners.items():
-            monitor = HvacMonitor(name, path)
-            threading.Thread(target=monitor.run, name=name).start()
+        monitors = [ HvacMonitor(name, path) for (name, path) in listeners.items() ]
+        for m in monitors:
+            threading.Thread(target=m.run, name=m.name).start()
+        return monitors
 
+
+class _ThreadingWSGISniffServer(ThreadingMixIn, WSGIServer):
+    """Thread per request HTTP server."""
+    # Make worker threads "fire and forget". Beginning with Python 3.7 this
+    # prevents a memory leak because ``ThreadingMixIn`` starts to gather all
+    # non-daemon threads in a list in order to join on them at server close.
+    daemon_threads = True
+
+
+def start_sniffserver(port, monitors):
+    def app(environ, start_response):
+        # Prepare parameters
+        accept_header = environ.get('HTTP_ACCEPT')
+        params = parse_qs(environ.get('QUERY_STRING', ''))
+        if environ['PATH_INFO'] == '/favicon.ico':
+            # Serve empty response for browsers
+            status = '200 OK'
+            header = ('', '')
+            output = b''
+        else:
+            status = '200 OK'
+            header = ('Content-type', 'application/json')
+            js = {}
+            for m in monitors:
+                js[m.name] = {
+                    'frame_to_index': m.frame_to_index,
+                    'frames': m.frames
+                }
+            output = json.dumps(js).encode()
+
+        start_response(status, [header])
+        return [output]
+
+    LOGGER.info(f'serving sniffed data on {port}')
+    httpd = make_server(addr, port, app, _ThreadingWSGISniffServer)
+    t = threading.Thread(target=httpd.serve_forever)
+    t.start()
 
 def main(args):
     logging.basicConfig(level=logging.INFO)
@@ -175,8 +216,11 @@ def main(args):
     else:
         LOGGER.info(f'configuration file {configfile} was empty; ignored')
     f = Finitude(config)
-    f.start_http_server()
-    f.start_listeners()
+    f.start_metrics_server()
+    monitors = f.start_listeners()
+    ssport = config.get('sniffserver')
+    if ssport:
+        start_sniffserver(ssport, monitors)
 
 
 if __name__ == '__main__':

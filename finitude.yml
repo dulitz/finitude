@@ -2,3 +2,5 @@ port: 8000
 listeners:
   upperlevel: 'telnet://localhost:2626'
   # lowerlevel: /dev/ttyUSB0
+
+# sniffserver: 8001
