@@ -136,11 +136,11 @@ class HvacMonitor:
                 stage = v >> 5
                 stagegauge = getgauge('finitude_stage', 'current operating stage')
                 stagegauge.labels(name=self.name).set(stage)
-                stateg = getgauge('finitude_state', 'current operating state', ['state'])
                 state = stage * (-1 if mode == frames.HvacMode.COOL else 1)
                 # FIXME: state is incorrect if mode is AUTO and we are cooling
                 s = 'OFF' if state == 0 else 'COOL' if state < 0 else 'HEAT'
-                stage.labels(name=self.name, state=s).set(state)
+                stateg = getgauge('finitude_state', 'current operating state', ['state'])
+                stateg.labels(name=self.name, state=s).set(state)
             else:
                 gauge = getgauge(gaugename, desc)
                 gauge.labels(name=self.name).set(v / divisor)
