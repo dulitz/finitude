@@ -136,7 +136,7 @@ class HvacMonitor:
                 frame = frames.ParsedFrame(self.bus.read())
                 HvacMonitor.FRAME_COUNT.labels(name=self.name).inc()
                 self.process_frame(frame)
-            except OSError:
+            except (OSError, frames.CarrierError):
                 LOGGER.exception('exception in frame processor, reconnecting')
                 time.sleep(1)
                 self.stream, self.bus = None, None
