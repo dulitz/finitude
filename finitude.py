@@ -11,7 +11,7 @@ constantly listening to the HVAC's RS-485 bus and updating our internal state.
 import json, logging, prometheus_client, threading, time, yaml
 
 from socketserver import ThreadingMixIn
-from urlparse import parse_qs
+from urllib.parse import parse_qs
 from wsgiref.simple_server import make_server, WSGIRequestHandler, WSGIServer
 
 import frames
