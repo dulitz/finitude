@@ -33,7 +33,7 @@ class SerialStream:
 
   def open(self):
     assert self.ser is None, self.ser
-    self.ser = serial.Serial(path, 38400)
+    self.ser = serial.Serial(self.path, 38400)
 
   def read(self, numbytes):
     return self.ser.read(numbytes)
