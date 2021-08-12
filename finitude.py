@@ -191,7 +191,7 @@ def start_sniffserver(port, monitors):
             header = ('Content-type', 'application/json')
             js = {}
             for m in monitors:
-                index_frame = sorted([(i, f) for (f, i) in m.frame_t_index.items()])
+                index_frame = sorted([(i, f) for (f, i) in m.frame_to_index.items()])
                 assert index_frame[0][0] == 1, index_frame[0]
                 self.lastindex_by_name = {}
                 frames = []
@@ -208,7 +208,7 @@ def start_sniffserver(port, monitors):
                             changes = []
                             for (last, this, i) in zip(lastdata, thisdata, range(len(lastdata))):
                                 if last != this:
-                                    changes.append(f'{i}[{hex(last)}->{hex(this)}]'(i, last, this))
+                                    changes.append(f'{i}[{hex(last)}->{hex(this)}]')
                             if len(changes) > 8:
                                 changes = len(changes)
                             frames.append((t, name, index, changes))
