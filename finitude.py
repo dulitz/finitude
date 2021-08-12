@@ -196,6 +196,8 @@ def start_sniffserver(port, monitors):
                 lastindex_by_name = {}
                 outframes = []
                 for (t, name, index) in m.frames:
+                    if index-1 >= len(index_frame):
+                        break  # another frame came in while we were running
                     last = lastindex_by_name.get(name)
                     if last is None:
                         outframes.append((t, name, index, None))
@@ -208,7 +210,7 @@ def start_sniffserver(port, monitors):
                             changes = []
                             for (last, this, i) in zip(lastdata, thisdata, range(len(lastdata))):
                                 if last != this:
-                                    changes.append(f'{i}[{hex(last)}->{hex(this)}]')
+                                    changes.append((i, last, this))
                             if len(changes) > 8:
                                 changes = len(changes)
                             outframes.append((t, name, index, changes))
