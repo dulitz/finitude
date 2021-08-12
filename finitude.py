@@ -120,11 +120,30 @@ class HvacMonitor:
         else:
             gaugename = f'finitude_{itemname}'
         with HvacMonitor.CV:
-            gauge = HvacMonitor.GAUGES.get(gaugename)
-            if gauge is None:
-                gauge = prometheus_client.Gauge(gaugename, desc, ['name'])
-                HvacMonitor.GAUGES[gaugename] = gauge
-            gauge.labels(name=self.name).set(v / divisor)
+            def getgauge(name, desc, morelabels=[]):
+                gauge = HvacMonitor.GAUGES.get(name)
+                if gauge is None:
+                    gauge = prometheus_client.Gauge(name, desc, ['name'] + morelabels)
+                    HvacMonitor.GAUGES[gaugename] = gauge
+                return gauge
+
+            if itemname == 'Mode' and not tablename:
+                # the lower 5 bits are the mode; upper bits are stage number
+                mode = v & 0x1f
+                modegauge = getgauge('finitude_mode', 'current operating mode', ['state'])
+                s = frames.HvacMode(mode).name
+                modegauge.labels(name=self.name, state=s).set(mode)
+                stage = v >> 5
+                stagegauge = getgauge('finitude_stage', 'current operating stage')
+                stagegauge.labels(name=self.name).set(stage)
+                stateg = getgauge('finitude_state', 'current operating state', ['state'])
+                state = stage * (-1 if mode == frames.HvacMode.COOL else 1)
+                # FIXME: state is incorrect if mode is AUTO and we are cooling
+                s = 'OFF' if state == 0 else 'COOL' if state < 0 else 'HEAT'
+                stage.labels(name=self.name, state=s).set(state)
+            else:
+                gauge = getgauge(gaugename, desc)
+                gauge.labels(name=self.name).set(v / divisor)
 
     def _report_crc_error(self):
         if self.synchronized:
