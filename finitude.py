@@ -112,7 +112,7 @@ class HvacMonitor:
             self.framedata_to_index[frame.data] = index
         w = ''
         if frame.func == frames.Function.WRITE:
-            w = f'WRITE({frames.ParsedFrame.get_printable_source_or_dest(frame.source)}):'
+            w = f'WRITE({frames.ParsedFrame.get_printable_address(frame.source)}):'
         self.frames.append((time.time(), w + name, index))
 
     def _set_gauge(self, tablename, itemname, v):
