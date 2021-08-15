@@ -7,7 +7,7 @@ The sniffserver dumps all the sniffed data. Useful paths:
    /start -- restart data collection
 """
 
-import logging, threading
+import json, logging, threading
 
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs

@@ -8,7 +8,7 @@ Prometheus can query us very often (every second if desired) because we are
 constantly listening to the HVAC's RS-485 bus and updating our internal state.
 """
 
-import json, logging, prometheus_client, threading, time, yaml
+import logging, prometheus_client, threading, time, yaml
 
 import frames
 import sniffserver
