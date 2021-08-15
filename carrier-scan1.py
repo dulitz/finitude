@@ -1,17 +1,15 @@
-#!/usr/bin/python
+"""
 
 # originally from https://github.com/3tones/brybus
+"""
 
 import time
-scriptstart =  time.time()
 import csv
 
-import brybus
-import ConfigParser
+import carrier
 
-cfg = ConfigParser.ConfigParser()
-cfg.read('brybus.cfg')
-serialport = cfg.get('brybus','serialport')
+scriptstart =  time.time()
+
 scan_registers = cfg.get('scanner','scan_registers')
 scan_data = cfg.get('scanner','scan_data')
 
