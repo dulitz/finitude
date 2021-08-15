@@ -10,11 +10,8 @@ constantly listening to the HVAC's RS-485 bus and updating our internal state.
 
 import json, logging, prometheus_client, threading, time, yaml
 
-from socketserver import ThreadingMixIn
-from urllib.parse import parse_qs
-from wsgiref.simple_server import make_server, WSGIRequestHandler, WSGIServer
-
 import frames
+import sniffserver
 
 
 class RequestError(Exception):
@@ -40,6 +37,9 @@ class HvacMonitor:
     DEVINFO = prometheus_client.Info('finitude_device',
                                      'info table from each device on the bus',
                                      ['name', 'device'])
+    HVACSTATE = prometheus_client.Enum('finitude_state_enum',
+                                       'state of HVAC system',
+                                       ['name'], states=['off', 'heat', 'cool'])
     TABLE_NAME_MAP = {
         'AirHandler06': 'airhandler',
         'AirHandler16': 'airhandler',
@@ -57,10 +57,11 @@ class HvacMonitor:
         self.stream, self.bus = None, None
         self.synchronized = False
         self.register_to_rest = {}
-        self.frame_to_index = {}
+        self.framedata_to_index = {}
         self.frames = []  # squashed
+        self.store_frames = False
         HvacMonitor.IS_SYNC.labels(name=self.name).set_function(lambda s=self: s.synchronized)
-        HvacMonitor.STORED_FRAMES.labels(name=self.name).set_function(lambda s=self: len(s.frame_to_index))
+        HvacMonitor.STORED_FRAMES.labels(name=self.name).set_function(lambda s=self: len(s.framedata_to_index))
         HvacMonitor.FRAME_SEQUENCE_LENGTH.labels(name=self.name).set_function(lambda s=self: len(s.frames))
 
     def open(self):
@@ -81,19 +82,30 @@ class HvacMonitor:
                 else:
                     tablename = self.TABLE_NAME_MAP.get(basename, basename)
                     for (k, v) in values.items():
-                        self._set_gauge(tablename, k, v)                    
-            self._storeframe(frame, name, rest)
+                        self._set_gauge(tablename, k, v)
+            return (name, rest)
+        return (None, None)
 
-    def _storeframe(self, frame, name, rest):
+    def set_store_frames(self, storethem):
+        """When storethem is True, run() will call store_frame() for each
+        frame it processes.
+        """
+        if storethem:
+            self.register_to_rest = {}
+            self.framedata_to_index = {}
+            self.frames = []  # squashed
+        self.store_frames = storethem
+
+    def store_frame(self, frame, name, rest):
         """If rest is a statechange on name, store the frame."""
-        lastrest = self.register_to_rest.get(name) if rest else None
+        (lastrest, lastframe) = self.register_to_rest.get(name) if rest else None
         if lastrest == (rest or None):
             return
-        self.register_to_rest[name] = rest
-        index = self.frame_to_index.get(frame.data)
+        self.register_to_rest[name] = (rest, frame)
+        index = self.framedata_to_index.get(frame.data)
         if index is None:
-            index = len(self.frame_to_index) + 1
-            self.frame_to_index[frame.data] = index
+            index = len(self.framedata_to_index) + 1
+            self.framedata_to_index[frame.data] = index
         self.frames.append((time.time(), name, index))
 
     def _set_gauge(self, tablename, itemname, v):
@@ -136,11 +148,12 @@ class HvacMonitor:
                 stage = v >> 5
                 stagegauge = getgauge('finitude_stage', 'current operating stage')
                 stagegauge.labels(name=self.name).set(stage)
+                # FIXME: state and enum are incorrect if mode is AUTO and we are cooling
                 state = stage * (-1 if mode == frames.HvacMode.COOL else 1)
-                # FIXME: state is incorrect if mode is AUTO and we are cooling
-                s = 'OFF' if state == 0 else 'COOL' if state < 0 else 'HEAT'
-                stateg = getgauge('finitude_state', 'current operating state', ['state'])
-                stateg.labels(name=self.name, state=s).set(state)
+                stateg = getgauge('finitude_state', 'current operating state')
+                stateg.labels(name=self.name).set(state)
+                s = 'off' if state == 0 else 'cool' if state < 0 else 'heat'
+                HvacMonitor.HVACSTATE.labels(name=self.name).state(s)
             else:
                 gauge = getgauge(gaugename, desc)
                 gauge.labels(name=self.name).set(v / divisor)
@@ -158,12 +171,13 @@ class HvacMonitor:
                     self.open()
                 frame = frames.ParsedFrame(self.bus.read())
                 HvacMonitor.FRAME_COUNT.labels(name=self.name).inc()
-                self.process_frame(frame)
+                (name, rest) = self.process_frame(frame)
+                if self.store_frames:
+                    self.store_frame(frame, name, rest)
             except (OSError, frames.CarrierError):
                 LOGGER.exception('exception in frame processor, reconnecting')
-                time.sleep(1)
                 self.stream, self.bus = None, None
-
+                time.sleep(1) # rate limiting
 
 class Finitude:
     def __init__(self, config):
@@ -171,6 +185,7 @@ class Finitude:
         port = self.config.get('port')
         if not port:
             self.config['port'] = 8000
+        self.monitors = []
 
     def start_metrics_server(self, port=0):
         if not port:
@@ -181,72 +196,19 @@ class Finitude:
     def start_listeners(self, listeners={}):
         if not listeners:
             listeners = self.config['listeners']
-        monitors = [ HvacMonitor(name, path) for (name, path) in listeners.items() ]
-        for m in monitors:
+        self.monitors = [ HvacMonitor(name, path) for (name, path) in listeners.items() ]
+        for m in self.monitors:
             threading.Thread(target=m.run, name=m.name).start()
-        return monitors
 
+    def start_sniffserver(self, port=0):
+        if not port:
+            port = config.get('sniffserver', 0)
+        if port:
+            for m in self.monitors:
+                m.set_store_frames(True)
+                # the sniffserver itself may call set_store_frames()
+            sniffserver.start_sniffserver(port, self.monitors)
 
-class _ThreadingWSGISniffServer(ThreadingMixIn, WSGIServer):
-    """Thread per request HTTP server."""
-    # Make worker threads "fire and forget". Beginning with Python 3.7 this
-    # prevents a memory leak because ``ThreadingMixIn`` starts to gather all
-    # non-daemon threads in a list in order to join on them at server close.
-    daemon_threads = True
-
-
-def start_sniffserver(port, monitors):
-    def app(environ, start_response):
-        # Prepare parameters
-        accept_header = environ.get('HTTP_ACCEPT')
-        params = parse_qs(environ.get('QUERY_STRING', ''))
-        if environ['PATH_INFO'] == '/favicon.ico':
-            # Serve empty response for browsers
-            status = '200 OK'
-            header = ('', '')
-            output = b''
-        else:
-            status = '200 OK'
-            header = ('Content-type', 'application/json')
-            js = {}
-            for m in monitors:
-                index_frame = sorted([(i, f) for (f, i) in m.frame_to_index.items()])
-                assert index_frame[0][0] == 1, index_frame[0]
-                lastindex_by_name = {}
-                outframes = []
-                for (t, name, index) in m.frames:
-                    if index-1 >= len(index_frame):
-                        break  # another frame came in while we were running
-                    last = lastindex_by_name.get(name)
-                    if last is None:
-                        outframes.append((t, name, index, None))
-                    else:
-                        lastdata = index_frame[last-1][1]
-                        thisdata = index_frame[index-1][1]
-                        if len(lastdata) != len(thisdata):
-                            changes = f'len {len(lastdata)}->{len(thisdata)}'
-                        else:
-                            changes = []
-                            for (last, this, i) in zip(lastdata, thisdata, range(len(lastdata))):
-                                if last != this:
-                                    changes.append((i, last, this))
-                            if len(changes) > 8:
-                                changes = len(changes)
-                            outframes.append((t, name, index, changes))
-                    lastindex_by_name[name] = index
-                js[m.name] = {
-                    'frames_by_index': [None] + [frames.bytestohex(f) for (i, f) in index_frame],
-                    'sequence': outframes,
-                }
-            output = json.dumps(js).encode()
-
-        start_response(status, [header])
-        return [output]
-
-    LOGGER.info(f'serving sniffed data on {port}')
-    httpd = make_server('', port, app, _ThreadingWSGISniffServer)
-    t = threading.Thread(target=httpd.serve_forever)
-    t.start()
 
 def main(args):
     logging.basicConfig(level=logging.INFO)
@@ -261,10 +223,9 @@ def main(args):
         LOGGER.info(f'configuration file {configfile} was empty; ignored')
     f = Finitude(config)
     f.start_metrics_server()
-    monitors = f.start_listeners()
-    ssport = config.get('sniffserver')
-    if ssport:
-        start_sniffserver(ssport, monitors)
+    f.start_listeners()
+    f.start_sniffserver()
+    # process will not exit until all threads terminate, which is never
 
 
 if __name__ == '__main__':
