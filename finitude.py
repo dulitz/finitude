@@ -202,7 +202,7 @@ class Finitude:
 
     def start_sniffserver(self, port=0):
         if not port:
-            port = config.get('sniffserver', 0)
+            port = self.config.get('sniffserver', 0)
         if port:
             for m in self.monitors:
                 m.set_store_frames(True)
