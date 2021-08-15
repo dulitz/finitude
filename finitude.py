@@ -73,10 +73,12 @@ class HvacMonitor:
 
     def process_frame(self, frame):
         self.synchronized = True
-        if frame.func == frames.Function.ACK06 and frame.length >= 3:
+        is_write = frame.func == frames.Function.WRITE
+        is_ack = frame.func == frames.Function.ACK06
+        if frame.length >= 3 and (is_write or is_ack):
             (name, values, rest) = frame.parse_register()
             (basename, paren, num) = name.partition('(')
-            if values:
+            if values and is_ack:
                 if basename == 'DeviceInfo':
                     self.DEVINFO.labels(name=self.name, device=frames.ParsedFrame.get_printable_address(frame.source)).info(values)
                 else:
@@ -108,7 +110,10 @@ class HvacMonitor:
         if index is None:
             index = len(self.framedata_to_index) + 1
             self.framedata_to_index[frame.data] = index
-        self.frames.append((time.time(), name, index))
+        w = ''
+        if frame.func == frames.Function.WRITE:
+            w = f'WRITE({frames.ParsedFrame.get_printable_source_or_dest(frame.source)}):'
+        self.frames.append((time.time(), w + name, index))
 
     def _set_gauge(self, tablename, itemname, v):
         if isinstance(v, str):
