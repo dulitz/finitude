@@ -1,96 +1,110 @@
-#!/usr/bin/python
+"""
+Scans all tables on all devices.
 
-#does a scan of all tables on all devices
+Originally from https://github.com/3tones/brybus
 
-# originally from https://github.com/3tones/brybus
+See also https://github.com/nebulous/infinitude/wiki/Infinity---interpreting-data
+for more helpful information.
+"""
 
+import sys
 import time
-scriptstart =  time.time()
 
-import brybus
-import ConfigParser
+import carrier
 
-cfg = ConfigParser.ConfigParser()
-cfg.read('brybus.cfg')
-serialport = cfg.get('brybus','serialport')
-scan_registers=cfg.get('scanner','scan_registers')
 
-#setup the stream and bus
-s = brybus.stream('S',serialport)
-b = brybus.bus(s)
-phase = 0
+class Scanner:
+  def __init__(self, bus):
+    self.bus = bus
 
-#loop forever
-while(1):
+  def get_devices(self, timelimit=10):
+    """Read the bus for timelimit seconds to determine a list of devices.
+    """
+    starttime = time.time()
+    devices = set()
+    while time.time() - starttime < timelimit:
+      frame = carrier.ParsedFrame(self.bus.read())
+      devices.add(frame.source)
+      devices.add(frame.dest)
+    return devices
 
-  #phase 0 reads the bus for 10 seconds to determine a list of devices
-  if phase==0:
-    #scan devices for X seconds - exit loop by setting phase=1
-    if 'ph1_time' in locals():
-      if time.time() - ph1_time > 10:
-        phase=1        
-        #uncomment the next line to force items into the device list
-        #devices = ['1F01'];
-        print "ending phase 0"
-        print "Devices:",devices
-    #if variables are not setup do some init stuff one time
-    else:
-      ph1_time = time.time()
-      print "starting phase 0"
-      devices=[]
-    #loop to read a frame and build a list of devices
-    f = brybus.frame(b.read(),"B") 
-    if f.src not in devices:
-      if f.src not in ('0000','00F1'):
-        devices.append(f.src)
+  def scan_tables(self, devices, timeout=0.1):
+    """Using the set of devices, build a queue of all possible tables, and scan them all.
+    timeout is the number of seconds before we give up on getting a response and send
+    another request.
+    """
+    source = bytes([0x30, 0x01])
+    func = 0x0b
+    responses = []
+    for d in devices:  # shorten this for testing
+      numtables = 64
+      print(f'destination {carrier.ParsedFrame.get_printable_address(d)} scanning {numtables} tables', file=sys.stderr)
+      for t in range(1, numtables):
+        data = bytes([0, t, 1])
+        while not self.bus.write(carrier.AssembledFrame(d, source, func, data).framebytes):
+          print('w', end='', file=sys.stderr)
+        print('S', end='', file=sys.stderr)
+        starttime = time.time()
+        while time.time() - starttime < timeout:
+          data = self.bus.read()
+          if data:
+            response = carrier.ParsedFrame(data)
+            if response.dest == source and response.source == d:
+              assert response.pid == 0, response.pid
+              assert response.ext == 0, response.ext
+              print('R', end='', file=sys.stderr)
+              responses.append((d, t, response))
+              break
+            else:
+              print('.', end='', file=sys.stderr)
+          else:
+            print('0', end='', file=sys.stderr)
+        else:
+          responses.append((d, t, None))
+    return responses
 
-  #use device list to build a queue of all possible tables, scan them all
-  if phase==1:
-    #if the initial setup is done, scan it (normal write/read loop)
-    if 'ph1_q' in locals():
-      #write
-      w = b.write(ph1_q.writeframe())
-      if w==1:
-        print "write", ph1_q.printstatus(), brybus.ByteToHex(ph1_q.writeframe())
-      if w==2:
-        print "pause"
-      #read and check frame      
-      f = brybus.frame(b.read(),"B")
-      #only print it if it followed a write
-      if w==1:
-        print f.dst,f.src,f.len,f.func,f.data,f.crc
-      ph1_q.checkframe(f)
-      #test for end of phase, set phase=2 to break      
-      if ph1_q.writeframe() == '':
-        phase=2           
-        print "ending phase 1"
-    #initial setup for the queue
-    else:  
-      print "starting phase 1"
-      #devices = ['2001'];
-      ph1_q = brybus.writequeue()
-      for d in devices:
-        for t in range(1,64): #shorten this for testing - set back to 1-64
-          reg = '00' + "{0:02X}".format(t) + '01' 
-          wf = brybus.frame(reg,'C',d,'3001','0B')
-          ph1_q.pushframe(wf)
-      print "phase 1 queue built"
-      ph1_q.printqueue()
-                      
-  #use the output of the scan to build a list of valid devices and tables
-  if phase==2:
-    #show all data from phase 2 for debugging
-    ph1_q.printqueue()
+  def filter_registers(self, responses):
+    # this is where I stopped work
+
+
+def main(args):
+  stream = carrier.StreamFactory(args[1])
+  bus = carrier.Bus(stream)
+  scanner = Scanner(bus)
+  devices = scanner.get_devices()
+  # uncomment the next line(s) to force items into the device list
+  # devices.add('1F01')
+  # devices.add('2001')
+  print('devices:', ' '.join(sorted([carrier.ParsedFrame.get_printable_address(d) for d in devices])), file=sys.stderr)
+
+  responses = scanner.scan_tables(devices)
+  registers = scanner.filter_registers(responses)
+
+  return 0
+
+if __name__ == '__main__':
+    import sys
+    scriptstart = time.time()
+    retval = main(sys.argv)
+    print(f'finished in {time.time() - scriptstart} seconds')
+    sys.exit(retval)
+
+
+#use the output of the scan to build a list of valid devices and tables
+
+def old(phase, ph1_q):
+    # scan_registers=cfg.get('scanner','scan_registers')
+
     tables=[]
     
-    print "==start table definition variable=="
-    #show all queue items where there was not an error - info only
+    # print "==start table definition variable=="
+    # show all queue items where there was not an error - info only
     for k,v in ph1_q.queue.iteritems():
       if v.response.func != '15':
-       print v.frame.dst, v.frame.data[2:4], v.response.data[30:32]
+       print(v.frame.dst, v.frame.data[2:4], v.response.data[30:32])
     
 
-    print "==start all valid table row combinations =="    
+    # print "==start all valid table row combinations =="    
     #write csv to console to build final output
     f = open(scan_registers, 'w')
 	
@@ -115,9 +129,5 @@ while(1):
             row_output = "{0:02X}".format(r+1)+ ','
             row_output += v.response.data[thisrow:thisrow+2] + ','
             row_output += v.response.data[thisrow+2:thisrow+4]
-            print output+row_output
+            print(output+row_output)
             f.write(output+row_output+'\n')
-
-    print "Seconds Elapsed:",(time.time()-scriptstart)
-    f.close()
-    exit()
