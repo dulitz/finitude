@@ -98,8 +98,10 @@ class HvacMonitor:
 
     def store_frame(self, frame, name, rest):
         """If rest is a statechange on name, store the frame."""
-        (lastrest, lastframe) = self.register_to_rest.get(name) if rest else None
-        if lastrest == (rest or None):
+        if not rest:
+            return  # we parsed it all, so nothing to store
+        (lastrest, lastframe) = self.register_to_rest.get(name, (None, None))
+        if lastrest == rest:
             return
         self.register_to_rest[name] = (rest, frame)
         index = self.framedata_to_index.get(frame.data)
