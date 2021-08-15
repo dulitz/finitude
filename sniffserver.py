@@ -69,7 +69,7 @@ def start_sniffserver(port, monitors):
                 js[m.name] = {
                     'frames_by_index': [None] + [frames.bytestohex(f) for (i, f) in index_frame],
                     'sequence': outframes,
-                    'frames_by_register': [(name, rf[1]) for (name, rf) in m.register_to_rest.items()],
+                    'frames_by_register': [(name, str(rf[1])) for (name, rf) in m.register_to_rest.items()],
                 }
             output = json.dumps(js).encode()
         elif path.startswith('/start'):
