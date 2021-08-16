@@ -249,6 +249,8 @@ class ParsedFrame:
     '000306': ('AirHandler06', [(1, Field.UNKNOWN), (1, Field.UINT16, 'BlowerRPM')]),
     # State & 0x03 != 0 when electric heat is on
     '000316': ('AirHandler16', [(1, Field.UINT8, 'State'), (3, Field.UNKNOWN), (1, Field.UINT16, 'AirflowCFM')]),
+    # DamperPosition is 0xff for a zone not connected to this device
+    '000319': ('DamperState', [(REPEATED_8_ZONES, Field.UINT8, 'DamperPosition')]),
     # changes from infinitive: first 3 unknown bytes
     '003b02': ('TStatCurrentParams', [(3, Field.UNKNOWN), (REPEATED_8_ZONES, Field.UINT8, 'CurrentTemp'), (REPEATED_8_ZONES, Field.UINT8, 'CurrentHumidity'), (1, Field.UNKNOWN), (1, Field.INT8, 'OutdoorAirTemp'), (1, Field.UINT8, 'ZonesUnoccupied'), (1, Field.UINT8, 'Mode'), (5, Field.UNKNOWN), (1, Field.UINT8, 'DisplayedZone')]),
     # changes from infinitive: first 3 unknown bytes
