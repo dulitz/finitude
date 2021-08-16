@@ -1,7 +1,13 @@
 # finitude
 
 Finitude decodes the ABCD bus (RS-485) used by Carrier Infinity and Bryant Evolution
-HVAC systems.
+HVAC systems. Finitude runs two webservers: one serves HVAC /metrics in a format that
+can be queried by [Prometheus](https://prometheus.io/), a time series database.
+Prometheus is a backend for [Grafana](https://grafana.com/) visualizations/dashboards.
+
+The other webserver is optional. It stores all the WRITE and ACK06 frames seen on
+the ABCD bus and dumps them as JSON. The functions in `analysis.py` can then be
+used to help find meaning in the frames.
 
 ## Why?
 
