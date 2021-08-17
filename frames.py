@@ -290,7 +290,7 @@ class ParsedFrame:
         reps, field = 12, Field.UTF8
       if field == Field.UTF8:
         assert reps > 0, (reps, field)
-        return (cursor[0:reps].decode().strip('\0'), cursor[reps:])
+        return (cursor[0:reps].decode(errors='ignore').strip('\0'), cursor[reps:])
       assert reps == 1, (reps, field)
       if field == Field.UINT8:
         return (cursor[0], cursor[1:])
