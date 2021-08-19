@@ -117,7 +117,7 @@ class HvacMonitor:
             w = f'WRITE({frames.ParsedFrame.get_printable_address(frame.source)}):'
         self.frames.append((time.time(), w + name, index))
 
-    ZONE_RE = re.compile(r'Zone\([1-8]\)\(.*\)')
+    ZONE_RE = re.compile(r'Zone([1-8])(.*)')
     def _set_gauge(self, tablename, itemname, v):
         zmatch = HvacMonitor.ZONE_RE.match(itemname)
         zone = int(zmatch.group(1)) if zmatch else None
