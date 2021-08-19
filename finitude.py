@@ -126,7 +126,7 @@ class HvacMonitor:
                 # then itemname is a zone name, e.g. Zone1Name
                 with HvacMonitor.CV:
                     if self.zone_to_name[zone-1] != v:
-                        LOGGER.info(f'zone {zone} has name {v}')
+                        LOGGER.info(f'{self.name} zone {zone} has name {v}')
                         self.zone_to_name[zone-1] = v
             # TODO: emit as a label?
             return
@@ -177,9 +177,12 @@ class HvacMonitor:
                 if zone:
                     gauge = getgauge(gaugename, desc, morelabels=['zone', 'zonename'])
                     zname = self.zone_to_name[zone-1].strip(' \0')
-                    gauge.labels(
-                        name=self.name, zone=str(zone), zonename=zname
-                    ).set(v / divisor)
+                    if zname:
+                        gauge.labels(
+                            name=self.name, zone=str(zone), zonename=zname
+                        ).set(v / divisor)
+                    else:
+                        LOGGER.debug(f'ignoring {gaugename} in {zone}: no zonename')
                 else:
                     gauge = getgauge(gaugename, desc)
                     gauge.labels(name=self.name).set(v / divisor)
