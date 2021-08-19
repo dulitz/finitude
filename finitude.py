@@ -8,7 +8,7 @@ Prometheus can query us very often (every second if desired) because we are
 constantly listening to the HVAC's RS-485 bus and updating our internal state.
 """
 
-import logging, prometheus_client, threading, time, yaml
+import logging, prometheus_client, re, threading, time, yaml
 
 import frames
 import sniffserver
@@ -51,6 +51,7 @@ class HvacMonitor:
         }
     GAUGES = {}
     CV = threading.Condition()
+    NUM_ZONES = 8
 
     def __init__(self, name, path):
         self.name, self.path = name, path
@@ -60,6 +61,7 @@ class HvacMonitor:
         self.framedata_to_index = {}
         self.frames = []  # squashed
         self.store_frames = False
+        self.zone_to_name = ['' for x in range(HvacMonitor.NUM_ZONES)]
         HvacMonitor.IS_SYNC.labels(name=self.name).set_function(lambda s=self: s.synchronized)
         HvacMonitor.STORED_FRAMES.labels(name=self.name).set_function(lambda s=self: len(s.framedata_to_index))
         HvacMonitor.FRAME_SEQUENCE_LENGTH.labels(name=self.name).set_function(lambda s=self: len(s.frames))
@@ -115,8 +117,17 @@ class HvacMonitor:
             w = f'WRITE({frames.ParsedFrame.get_printable_address(frame.source)}):'
         self.frames.append((time.time(), w + name, index))
 
+    ZONE_RE = re.compile(r'Zone\([1-8]\)\(.*\)')
     def _set_gauge(self, tablename, itemname, v):
+        zmatch = HvacMonitor.ZONE_RE.match(itemname)
+        zone = int(zmatch.group(1)) if zmatch else None
         if isinstance(v, str):
+            if zone and zmatch.group(2) == 'Name' and not tablename:
+                # then itemname is a zone name, e.g. Zone1Name
+                with HvacMonitor.CV:
+                    if self.zone_to_name[zone-1] != v:
+                        LOGGER.info(f'zone {zone} has name {v}')
+                        self.zone_to_name[zone-1] = v
             # TODO: emit as a label?
             return
         desc = ''
@@ -134,10 +145,11 @@ class HvacMonitor:
             if word:
                 itemname = f'{pre}{"_" if pre else ""}{word.lower()}{"_" if post else ""}{post}'
                 break
+        nonzone = zmatch.group(2) if zmatch else itemname
         if tablename:
-            gaugename = f'finitude_{tablename}_{itemname.lower()}'
+            gaugename = f'finitude_{tablename}_{nonzone.lower()}'
         else:
-            gaugename = f'finitude_{itemname}'
+            gaugename = f'finitude_{nonzone}'
         with HvacMonitor.CV:
             def getgauge(name, desc, morelabels=[]):
                 gauge = HvacMonitor.GAUGES.get(name)
@@ -162,8 +174,15 @@ class HvacMonitor:
                 s = 'off' if state == 0 else 'cool' if state < 0 else 'heat'
                 HvacMonitor.HVACSTATE.labels(name=self.name).state(s)
             else:
-                gauge = getgauge(gaugename, desc)
-                gauge.labels(name=self.name).set(v / divisor)
+                if zone:
+                    gauge = getgauge(gaugename, desc, morelabels=['zone', 'zonename'])
+                    zname = self.zone_to_name[zone-1].strip(' \0')
+                    gauge.labels(
+                        name=self.name, zone=str(zone), zonename=zname
+                    ).set(v / divisor)
+                else:
+                    gauge = getgauge(gaugename, desc)
+                    gauge.labels(name=self.name).set(v / divisor)
 
     def _report_crc_error(self):
         if self.synchronized:
