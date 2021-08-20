@@ -245,22 +245,44 @@ class ParsedFrame:
   # and https://github.com/acd/infinitive/blob/master/tables.go
   REPEATED_8_ZONES = 0
   REGISTER_INFO = {
+    # table 01 DEVCONFG
+    # DeviceInfo is read-only (read by thermostat and SAM)
     '000104': ('DeviceInfo', [(48, Field.UTF8, 'Module'), (16, Field.UTF8, 'Firmware'), (20, Field.UTF8, 'Model'), (36, Field.UTF8, 'Serial')]),
+
+    # table 02 SYSTIME
+    # read/write: thermostat broadcasts updated time and date every minute
+    '000202': ('SysTime', [(1, Field.UINT8, 'Hour'), (1, Field.UINT8, 'Minute')]),
+    '000203': ('SysDate', [(1, Field.UINT8, 'Day'), (1, Field.UINT8, 'Month'), (1, Field.UINT8, 'Year')]),
+
+    # table 03 RLCSMAIN / INGUI
     '000306': ('AirHandler06', [(1, Field.UNKNOWN), (1, Field.UINT16, 'BlowerRPM')]),
+    # DamperControl is write-only (written by thermostat); 0319 is state
+    '000308': ('DamperControl', [(REPEATED_8_ZONES, Field.UINT8, 'DamperPosition')]),
     # State & 0x03 != 0 when electric heat is on
     '000316': ('AirHandler16', [(1, Field.UINT8, 'State'), (3, Field.UNKNOWN), (1, Field.UINT16, 'AirflowCFM')]),
     # DamperPosition is 0xff for a zone not connected to this device
+    # DamperState is read-only (read by the thermostat); 000308 is control
     '000319': ('DamperState', [(REPEATED_8_ZONES, Field.UINT8, 'DamperPosition')]),
+
+    # table 34 4 ZONE
+    # 0 is off, 1 is low, 2 is med, 3 is high
+    # read/write
+    # thermostat writes this to NIM (8001) or damper control module (6001)
+    '003404': ('HRVState', [(1, Field.UINT8, 'Speed')]),
+
+    # table 3b AI PARMS / NVMINIT
     # changes from infinitive: first 3 unknown bytes
     '003b02': ('TStatCurrentParams', [(3, Field.UNKNOWN), (REPEATED_8_ZONES, Field.UINT8, 'CurrentTemp'), (REPEATED_8_ZONES, Field.UINT8, 'CurrentHumidity'), (1, Field.UNKNOWN), (1, Field.INT8, 'OutdoorAirTemp'), (1, Field.UINT8, 'ZonesUnoccupied'), (1, Field.UINT8, 'Mode'), (5, Field.UNKNOWN), (1, Field.UINT8, 'DisplayedZone')]),
     # changes from infinitive: first 3 unknown bytes
     '003b03': ('TStatZoneParams', [(3, Field.UNKNOWN), (REPEATED_8_ZONES, Field.UINT8, 'FanMode'), (1, Field.UINT8, 'ZonesHolding'), (REPEATED_8_ZONES, Field.UINT8, 'CurrentHeatSetpoint'), (REPEATED_8_ZONES, Field.UINT8, 'CurrentCoolSetpoint'), (REPEATED_8_ZONES, Field.UINT8, 'CurrentHumiditySetpoint'), (1, Field.UINT8, 'FanAutoConfig'), (1, Field.UNKNOWN), (REPEATED_8_ZONES, Field.UINT16, 'HoldDuration'), (REPEATED_8_ZONES, Field.NAME, 'Name')]),
     '003b04': ('TStatVacationParams', [(1, Field.UINT8, 'Active'), (1, Field.UINT16, 'DaysTimes7'), (1, Field.UINT8, 'MinTemp'), (1, Field.UINT8, 'MaxTemp'), (1, Field.UINT8, 'MinHumidity'), (1, Field.UINT8, 'MaxHumidity'), (1, Field.UINT8, 'FanMode')]),
+
+    # table 3e DCLEGACY
     '003e01': ('HeatPump01', [(1, Field.UINT16, 'OutsideTempTimes16'), (1, Field.UINT16, 'CoilTempTimes16')]),
     # shift StageShift1 right by one bit to get the stage number
     # higher stage numbers correspond to auxilliary heat on
     '003e02': ('HeatPump02', [(1, Field.UINT8, 'StageShift1')]),
-    }
+  }
   def _get_register_info(self):
     assert (self.func == Function.READ or
             self.func == Function.WRITE or
