@@ -11,6 +11,7 @@ constantly listening to the HVAC's RS-485 bus and updating our internal state.
 import logging, prometheus_client, re, threading, time, yaml
 
 import frames
+import registers
 import sniffserver
 
 
@@ -23,7 +24,8 @@ LOGGER = logging.getLogger('finitude')
 
 class HvacMonitor:
     FRAME_COUNT = prometheus_client.Counter('finitude_frames',
-                                            'number of frames received', ['name'])
+                                            'number of frames received',
+                                            ['name', 'source', 'dest', 'func', 'register'])
     IS_SYNC = prometheus_client.Gauge('finitude_synchronized',
                                       '1 if reader is synchronized to bus', ['name'])
     DESYNC_COUNT = prometheus_client.Counter('finitude_desyncs',
@@ -81,9 +83,10 @@ class HvacMonitor:
             (name, values, rest) = frame.parse_register()
             (basename, paren, num) = name.partition('(')
             addr = frame.source if is_ack else frame.dest
-            if values and is_ack:
+            if values:
                 if basename == 'DeviceInfo':
-                    self.DEVINFO.labels(name=self.name, device=frames.ParsedFrame.get_printable_address(frame.source)).info(values)
+                    if is_ack:
+                        self.DEVINFO.labels(name=self.name, device=frames.ParsedFrame.get_printable_address(frame.source)).info(values)
                 else:
                     tablename = self.TABLE_NAME_MAP.get(basename, basename)
                     for (k, v) in values.items():
@@ -137,11 +140,11 @@ class HvacMonitor:
         (pre, times, post) = itemname.partition('Times7')
         if times and not post:
             itemname = pre
-            divisor = 7
+            divisor = 7.0
         (pre, times, post) = itemname.partition('Times16')
         if times and not post:
             itemname = pre
-            divisor = 16
+            divisor = 16.0
         for words in ['RPM', 'CFM']:
             (pre, word, post) = itemname.partition(words)
             if word:
@@ -164,13 +167,13 @@ class HvacMonitor:
                 # the lower 5 bits are the mode; upper bits are stage number
                 mode = v & 0x1f
                 modegauge = getgauge('finitude_mode', 'current operating mode', ['state'])
-                s = frames.HvacMode(mode).name
+                s = registers.HvacMode(mode).name
                 modegauge.labels(name=self.name, state=s).set(mode)
                 stage = v >> 5
                 stagegauge = getgauge('finitude_stage', 'current operating stage')
                 stagegauge.labels(name=self.name).set(stage)
                 # FIXME: state and enum are incorrect if mode is AUTO and we are cooling
-                state = stage * (-1 if mode == frames.HvacMode.COOL else 1)
+                state = stage * (-1 if mode == registers.HvacMode.COOL else 1)
                 stateg = getgauge('finitude_state', 'current operating state')
                 stateg.labels(name=self.name).set(state)
                 s = 'off' if state == 0 else 'cool' if state < 0 else 'heat'
@@ -201,10 +204,18 @@ class HvacMonitor:
                 if self.stream is None:
                     self.open()
                 frame = frames.ParsedFrame(self.bus.read())
-                HvacMonitor.FRAME_COUNT.labels(name=self.name).inc()
                 (name, rest) = self.process_frame(frame)
                 if self.store_frames:
+                    HvacMonitor.FRAME_COUNT.labels(
+                        name=self.name,
+                        source=frames.ParsedFrame.get_printable_address(frame.source),
+                        dest=frames.ParsedFrame.get_printable_address(frame.dest),
+                        func=frame.get_function_name(),
+                        register=name or 'unknown',
+                    ).inc()
                     self.store_frame(frame, name, rest)
+                else:
+                    HvacMonitor.FRAME_COUNT.labels(name=self.name).inc()
             except (OSError, frames.CarrierError):
                 LOGGER.exception('exception in frame processor, reconnecting')
                 self.stream, self.bus = None, None
