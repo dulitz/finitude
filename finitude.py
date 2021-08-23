@@ -157,6 +157,7 @@ class HvacMonitor:
             gaugename = f'finitude_{nonzone}'
         with HvacMonitor.CV:
             def getgauge(name, desc, morelabels=[]):
+                name = name.replace('(', '').replace(')', '')
                 gauge = HvacMonitor.GAUGES.get(name)
                 if gauge is None:
                     gauge = prometheus_client.Gauge(name, desc, ['name'] + morelabels)
