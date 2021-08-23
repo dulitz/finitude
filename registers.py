@@ -8,6 +8,8 @@ See also
 https://github.com/nebulous/infinitude/wiki/Infinity---interpreting-data
 """
 
+import struct
+
 from enum import Enum, IntEnum
 
 
