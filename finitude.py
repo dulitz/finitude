@@ -212,7 +212,7 @@ class HvacMonitor:
                         source=frames.ParsedFrame.get_printable_address(frame.source),
                         dest=frames.ParsedFrame.get_printable_address(frame.dest),
                         func=frame.get_function_name(),
-                        register=name or 'unknown',
+                        register=name or frame.get_register() or 'unknown',
                     ).inc()
                     self.store_frame(frame, name, rest)
                 else:
