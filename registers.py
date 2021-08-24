@@ -81,9 +81,8 @@ REGISTER_INFO = {
   #######################################################
   # table 02 SYSTIME
 
-  # SysTime and SysDate are read/write
-  # thermostat broadcasts updated time and date every minute
-  # not segment addressable
+  # SysTime and SysDate are read/write, non-segmented.
+  # Thermostat broadcasts updated time and date every minute.
   '000202': ('SysTime', [
     (1, Field.UINT8, 'Hour'),
     (1, Field.UINT8, 'Minute')
@@ -103,10 +102,10 @@ REGISTER_INFO = {
     (1, Field.UINT16, 'BlowerRPM')
   ]),
 
-  # DamperControl is write-only to damper control 0x6001 (by thermostat 0x2001)
-  # Register 0319 is the corresponding read-only state register.
-  # Each damper control module will
-  # ignore either zones 1-4 or zones 5-8 according to DIP switch settings.
+  # DamperControl is write-only, non-segmented, to damper control 0x6001
+  # (by thermostat 0x2001). DamperState(0319) is the corresponding read-only
+  # state register. Each damper control module will ignore either
+  # zones 1-4 or zones 5-8 according to DIP switch settings.
   '000308': ('DamperControl', [
     (REPEATED_8_ZONES, Field.UINT8, 'DamperPosition')  # 0 closed, 0xf full open
   ]),
@@ -118,8 +117,8 @@ REGISTER_INFO = {
     (1, Field.UINT16, 'AirflowCFM')
   ]),
 
-  # DamperState is read-only damper control 0x6001 (by thermostat 0x2001)
-  # Register 0308 is the corresponding write-only control.
+  # DamperState is read-only damper control 0x6001 (by thermostat 0x2001).
+  # DamperControl(0308) is the corresponding write-only control.
   # Zones 1-4 or zones 5-8 will be reported as 0xff for zones not connected
   # to this device according to DIP switch settings.
   '000319': ('DamperState', [
@@ -129,8 +128,8 @@ REGISTER_INFO = {
   #######################################################
   # table 34 [NIM or damper control module] 4 ZONE
 
-  # HVRState is read/write damper control 0x6001 (from thermostat 0x2001)
-  # not segment addressable
+  # HVRState is read/write, non-segmented damper control 0x6001
+  # (from thermostat 0x2001).
   '003404': ('HRVState', [
     (1, Field.UINT8, 'Speed')  # 0 off, 1 low, 2 med, 3 high
   ]),
@@ -138,26 +137,33 @@ REGISTER_INFO = {
   #######################################################
   # table 3b [thermostat] AI PARMS / NVMINIT
 
-  # Infinitive: read/write thermostat 0x2001
-  # segment addressable for writing
+  # Infinitive: read/write segmented; thermostat 0x2001
   '003b02': ('TStatCurrentParams', [
-    (3, Field.UNKNOWN),  # not in Infinitive
+    # first field is not in Infinitive -- may be unique to Touch thermostats
+    # may be the set of zones that are configured/active
+    (1, Field.UINT8, 'ZonesUnknown'),
+    # this field is also not in Infinitive and may be unique to Touch
+    # seems to always be 0
+    (2, Field.UNKNOWN),  # not in Infinitive
     (REPEATED_8_ZONES, Field.UINT8, 'CurrentTemp'),
     (REPEATED_8_ZONES, Field.UINT8, 'CurrentHumidity'),
-    (1, Field.UNKNOWN),
+    (1, Field.UNKNOWN),  # typically 0
     (1, Field.INT8, 'OutdoorAirTemp'),  # -1 if sensor not present
     (1, Field.UINT8, 'ZonesUnoccupied'),  # LSB is zone 1, MSB is zone 8
     # high order nybble of Mode is the stage number
     # low order nybble is defined by HvacMode enum
     (1, Field.UINT8, 'Mode'),  # segment 0x10
-    (5, Field.UNKNOWN),
+    (5, Field.UNKNOWN),  # typically 255, 0, 0, 4, 89
     (1, Field.UINT8, 'DisplayedZone')
   ]),
 
-  # Infinitive: read/write thermostat 0x2001
-  # segment addressable for writing
+  # Infinitive: read/write segmented; thermostat 0x2001
   '003b03': ('TStatZoneParams', [
-    (3, Field.UNKNOWN),  # not in Infinitive
+    # first field is not in Infinitive -- may be unique to Touch thermostats
+    # may be the set of zones that are configured/active
+    (1, Field.UINT8, 'ZonesUnknown'),
+    # this field is also not in Infinitive and may be unique to Touch
+    (2, Field.UNKNOWN),  # not in Infinitive; typically 0
     (REPEATED_8_ZONES, Field.UINT8, 'FanMode'),  # segment 1
     (1, Field.UINT8, 'ZonesHolding'),  # segment 2; LSB is zone 1, MSB is zone 8
     (REPEATED_8_ZONES, Field.UINT8, 'CurrentHeatSetpoint'),  # segment 4
@@ -169,9 +175,9 @@ REGISTER_INFO = {
     (REPEATED_8_ZONES, Field.NAME, 'Name')
   ]),
 
-  # Infinitive: read/write thermostat 0x2001
-  # we have not seen this frame live with Infinity Touch thermostats
-  # segment addressable for writing
+  # Infinitive: read/write segmented; thermostat 0x2001.
+  # We have not seen this frame live with Infinity Touch thermostats, but
+  # the SAM documentation says it should work with Touch.
   '003b04': ('TStatVacationParams', [
     (1, Field.UINT8, 'Active'),  # segment 1: 1 if vacation is active, 0 otherwise
     (1, Field.UINT16, 'Hours'),  # segment 2
@@ -181,6 +187,43 @@ REGISTER_INFO = {
     (1, Field.UINT8, 'MaxHumidity'),  # segment 0x20
     (1, Field.UINT8, 'FanMode')  # segment 0x40
   ]),
+
+  # read/write segmented; thermostat 0x2001 (by SAM).
+  '003b06': ('TStatUntitled', [
+    (1, Field.UINT8, 'ValidZones'),  # some zone bitmap, could be this
+    (11, Field.UNKNOWN), # typically 0, 0, 1, 1, 2, 2, ff, ff, 1, 0, 0
+    (20, Field.UTF8, 'DealerName'), # not writable for Touch thermostats
+    (20, Field.UTF8, 'DealerPhone'), # not writable for Touch thermostats
+  ]),
+
+  # thermostat/SAM info still to determine:
+  #   get current day of week
+  #   get humidifier state
+  #   per-zone "hold until" override timer-in-use
+  #   get/set per-zone "hold until" override timer (0 if not in use)
+  #   get/set percentage used: filter, UV lamp, humidifier pad; ventilator pad
+  #      (note: can only set 0 percent used)
+  #   enable/disable reminders: filter; UV lamp; humidifier pad; ventilator pad
+  #   enable/disable high intensity backlight
+  #   get/set thermostat units
+  #   get AUTO mode enable (always on)
+  #   get system type (cool/heat/heatcool)
+  #   get deadband
+  #   get cycles per hour
+  #   get programmable fan enable (always on)
+  #   get programming state (always on)
+  #
+  # fields not supported by Touch:
+  #   set current day of week
+  #   enable/disable AUTO mode
+  #   set deadband
+  #   set cycles per hour
+  #   enable/disable programmable fan
+  #   set number of periods for programming
+  #   set programming state
+  #   set program for WAKE/DAY/EVE/SLEEP period
+  #      for each period, for each day: heat setpt, cool setpt, fanmode
+  #   reset factory defaults
 
   #######################################################
   # table 3e DCLEGACY
