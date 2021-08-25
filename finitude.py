@@ -101,7 +101,7 @@ class HvacMonitor:
                         else:
                             state = str(s['State'])
                         if s['Type'] >= 1 and s['Type'] <= 8:
-                            stype = f'Zone{s['Type']}'
+                            stype = f'Zone{s["Type"]}'
                         elif s['Type'] == 0x14:
                             stype = 'LAT'  # FIXME: may be HPT
                         elif s['Type'] == 0x1c:
