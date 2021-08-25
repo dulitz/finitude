@@ -286,7 +286,7 @@ class ParsedFrame:
       elif field == Field.REPEATING:
         assert reps == 0, (reps, field, *fieldname)
         assert len(fieldname) == 1, (reps, field, *fieldname)
-        dictname = *fieldname
+        dictname = fieldname[0]
         allreps = []
         while cursor:
           found = False
