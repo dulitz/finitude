@@ -264,6 +264,12 @@ class ParsedFrame:
     cursor = self.data[3:]
     values = {}
     unknowns = 0
+    def parseone(values, cursor, reps, field, *fieldname):
+      assert len(fieldname) == 1, (reps, field, *fieldname)
+      (value, newcursor) = Field.parse(cursor, reps, field)
+      assert fieldname[0] not in values, (values, (reps, field, *fieldname))
+      values[fieldname[0]] = value
+      return newcursor
     for (reps, field, *fieldname) in fmt:
       if reps == REPEATED_8_ZONES:
         assert len(fieldname) == 1, (reps, field, *fieldname)
@@ -277,11 +283,25 @@ class ParsedFrame:
           values[f'{name}_unk{unknowns}_{r}'] = cursor[r]
         cursor = cursor[reps:]
         unknowns += 1
-      else:
+      elif field == Field.REPEATING:
+        assert reps == 0, (reps, field, *fieldname)
         assert len(fieldname) == 1, (reps, field, *fieldname)
-        (value, cursor) = Field.parse(cursor, reps, field)
-        assert fieldname[0] not in values, (values, (reps, field, *fieldname))
-        values[fieldname[0]] = value
+        dictname = *fieldname
+        allreps = []
+        while cursor:
+          found = False
+          v = {}
+          for (reps, field, *fieldname) in fmt:
+            if found:
+              cursor = parseone(v, cursor, reps, field, *fieldname)
+            elif field == Field.REPEATING:
+              found = True
+          assert v, (fmt, cursor)
+          allreps.append(v)
+        values[dictname] = allreps
+        return (name, values, cursor)
+      else:
+        cursor = parseone(values, cursor, reps, field, *fieldname)
     return (name, values, cursor)
 
   def __str__(self):

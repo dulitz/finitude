@@ -39,6 +39,8 @@ class Field(Enum):
     UINT8 = 3
     INT8 = 4
     UINT16 = 5
+    # INT16 = 6  # not implemented
+    REPEATING = 99  # the rest of the fields may repeat 0 or more times
 
     @staticmethod
     def parse(cursor, reps, field):
@@ -85,7 +87,8 @@ REGISTER_INFO = {
   # Thermostat broadcasts updated time and date every minute.
   '000202': ('SysTime', [
     (1, Field.UINT8, 'Hour'),
-    (1, Field.UINT8, 'Minute')
+    (1, Field.UINT8, 'Minute'),
+    (1, Field.UINT8, 'DayOfWeek')  # 0 = Sunday, 6 = Saturday
   ]),
   '000203': ('SysDate', [
     (1, Field.UINT8, 'Day'),
@@ -95,6 +98,19 @@ REGISTER_INFO = {
 
   #######################################################
   # table 03 RLCSMAIN / INGUI
+
+  # read-only air handler, heatpump, damper control devices 0x4001, 0x5201, 0x6001
+  '000302': ('Temperatures', [
+    # types 11, 14, and 02 for air handler (all open circuit in our systems)
+    # types 11, 12, 30, 4a, 4b, 45 for heat pump (all present on upper level)
+    # types 01, 02, 03, 04 are zone temperature sensors for damper control
+    # types 14 and 1c are LAT and HPT sensors for damper control (open circuit for us)
+    (0, Field.REPEATING, 'TempSensors'),
+    (1, Field.UINT8, 'State'),  # 01 = connected, 04 = open circuit
+    (1, Field.UINT8, 'Type'),
+    (1, Field.UINT16, 'TempTimes16'),
+    # 0x8001 ends at 1 rep, 0x4001 ends at 3 reps, 0x5201 and 0x6001 end at 6 reps
+  ]),
 
   # Infinitive: read-only air handler device 0x4001, 0x4101, 0x4201
   '000306': ('AirHandler06', [
@@ -123,6 +139,15 @@ REGISTER_INFO = {
   # to this device according to DIP switch settings.
   '000319': ('DamperState', [
     (REPEATED_8_ZONES, Field.UINT8, 'DamperPosition')  # 0xff for zone not present
+  ]),
+
+  #######################################################
+  # table 04 DELUXEUI / SSSBCAST
+
+  # read/write, non-segmented air handler 0x4001
+  # (from thermostat 0x2001).
+  '000409': ('UntitledAirHandler', [
+    (4, Field.UNKNOWN),  # most bytes zero, second byte sometimes 1
   ]),
 
   #######################################################
