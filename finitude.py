@@ -42,6 +42,9 @@ class HvacMonitor:
     HVACSTATE = prometheus_client.Enum('finitude_state_enum',
                                        'state of HVAC system',
                                        ['name'], states=['off', 'heat', 'cool'])
+    TEMPSENSORS = prometheus_client.Gauge('finitude_temp_sensor',
+                                          'temp reported by sensor',
+                                          ['name', 'device', 'state', 'sensor_type'])
     TABLE_NAME_MAP = {
         'AirHandler06': 'airhandler',
         'AirHandler16': 'airhandler',
@@ -84,9 +87,31 @@ class HvacMonitor:
             (basename, paren, num) = name.partition('(')
             addr = frame.source if is_ack else frame.dest
             if values:
-                if basename == 'DeviceInfo':
+                if name == 'DeviceInfo(0104)':
                     if is_ack:
-                        self.DEVINFO.labels(name=self.name, device=frames.ParsedFrame.get_printable_address(frame.source)).info(values)
+                        sa = frames.ParsedFrame.get_printable_address(frame.source)
+                        self.DEVINFO.labels(name=self.name, device=sa).info(values)
+                elif name == 'Temperatures(0302)':
+                    for s in values['TempSensors']:
+                        sa = frames.ParsedFrame.get_printable_address(frame.source)
+                        if s['State'] == 1:
+                            state = 'present'
+                        elif s['State'] == 4:
+                            state = 'missing'
+                        else:
+                            state = str(s['State'])
+                        if s['Type'] >= 1 and s['Type'] <= 8:
+                            stype = f'Zone{s['Type']}'
+                        elif s['Type'] == 0x14:
+                            stype = 'LAT'  # FIXME: may be HPT
+                        elif s['Type'] == 0x1c:
+                            stype = 'HPT'  # FIXME: may be LAT
+                        else:
+                            stype = str(s['Type'])
+                        temp = s['TempTimes16']
+                        self.TEMPSENSORS.labels(
+                            name=self.name, device=sa, state=state, sensor_type=stype
+                        ).set(temp / 16.0)
                 else:
                     tablename = self.TABLE_NAME_MAP.get(basename, basename)
                     for (k, v) in values.items():
