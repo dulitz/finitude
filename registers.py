@@ -66,7 +66,7 @@ class Field(Enum):
         assert False, (reps, field)
 
 
-REPEATED_8_ZONES = 0
+REPEATED_8_ZONES = -1
 
 REGISTER_INFO = {
   #######################################################
