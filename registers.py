@@ -101,10 +101,19 @@ REGISTER_INFO = {
 
   # read-only air handler, heatpump, damper control devices 0x4001, 0x5201, 0x6001
   '000302': ('Temperatures', [
-    # types 11, 14, and 02 for air handler (all open circuit in our systems)
-    # types 11, 12, 30, 4a, 4b, 45 for heat pump (all present on upper level)
-    # types 01, 02, 03, 04 are zone temperature sensors for damper control
-    # types 14 and 1c are LAT and HPT sensors for damper control (open circuit for us)
+    # types 01, 02, 03, 04 ... 08, 0x14, and 1c from damper control
+    # types 0x11, 0x14, and 02 from air handler (all open circuit in our systems)
+    # types 0x11, 0x12, 0x30, 4a, 4b, 0x45 from heat pump (all present on system 2)
+    #    zone temperature sensors 01, 02, ... 08
+    #    outdoor air temperature is type 17 (0x11)
+    #    LAT (leaving air temperature) is type 20 (0x14)
+    #    HPT (heat pump temperature) is type 28 0x1c
+    #    outdoor coil temperature is type 48 (0x30)
+    #    discharge line temperature is type 69 (0x45)
+    #    type 74 (0x4a) seems to be a difference: usually 0 or 1, goes up
+    #       when system in use
+    #    type 75 (0x4b) is about 6 degrees less than OAT in all conditions
+    #    suction tube temperature is type 18? 18 goes up somewhat during use
     (0, Field.REPEATING, 'TempSensors'),
     (1, Field.UINT8, 'State'),  # 01 = connected, 04 = open circuit
     (1, Field.UINT8, 'Type'),
@@ -112,10 +121,20 @@ REGISTER_INFO = {
     # 0x8001 ends at 1 rep, 0x4001 ends at 3 reps, 0x5201 and 0x6001 end at 6 reps
   ]),
 
+  # read-only (?) heat pump 0x5201 (from thermostat 0x2001)
+  '000303': ('UntitledHeatPump', [
+    (4, Field.UNKNOWN),  # 01 30 0b f0
+  ]),
+
   # Infinitive: read-only air handler device 0x4001, 0x4101, 0x4201
   '000306': ('AirHandler06', [
     (1, Field.UNKNOWN),
     (1, Field.UINT16, 'BlowerRPM')
+  ]),
+
+  # write-only unsegmented air handler 0x4001 (from themostat 0x2001)
+  '000307': ('UntitledAirHandler07', [
+    (4, Field.UNKNOWN)
   ]),
 
   # DamperControl is write-only, non-segmented, to damper control 0x6001
@@ -125,6 +144,11 @@ REGISTER_INFO = {
   '000308': ('DamperControl', [
     (REPEATED_8_ZONES, Field.UINT8, 'DamperPosition')  # 0 closed, 0xf full open
   ]),
+
+  # read-only from all devices including SAM (by thermostat 0x2001)
+  # 7 bytes usually all zeroes; heat pump 14 bytes usually all zeroes;
+  # SAM 3d 3f 00 0000 0000 alternates with 3f 0000 0000 0000
+  # '00030d':
 
   # Infinitive: read-only air handler device 0x4001, 0x4101, or 0x4201
   '000316': ('AirHandler16', [
@@ -144,11 +168,45 @@ REGISTER_INFO = {
   #######################################################
   # table 04 DELUXEUI / SSSBCAST
 
+  # write-only unsegmented air handler 0x4001 (from themostat 0x2001)
+  '000403': ('UntitledAirHandler03', [
+    (4, Field.UNKNOWN)
+  ]),
+
   # read/write, non-segmented air handler 0x4001
   # (from thermostat 0x2001).
   '000409': ('UntitledAirHandler', [
     (4, Field.UNKNOWN),  # most bytes zero, second byte sometimes 1
   ]),
+
+  # read-only (?) air handler 0x4001 (from thermostat 0x2001).
+  # NACKed by 58MVC
+  # '00041b'
+
+  #######################################################
+  # table 06
+
+  # write-only unsegmented heat pump 0x5201 (from themostat 0x2001)
+  '00060d': ('UntitledHeatPump0d', [
+    (1, Field.UINT8, 'Unknown')
+  ]),
+
+  # write-only unsegmented heat pump 0x5201 (from themostat 0x2001)
+  '000610': ('UntitledHeatPump10', [
+    (4, Field.UNKNOWN)
+  ]),
+
+  # write-only unsegmented heat pump 0x5201 (from themostat 0x2001)
+  '00061a': ('UntitledHeatPump1a', [
+    (1, Field.UINT8, 'Unknown')
+  ]),
+
+  #######################################################
+  # table 30 EECONFIG
+
+  # read-only (?) thermostat 0x2001 (from SAM 0x9201)
+  # appears to be NACKed by Touch thermostat firmware 3.60
+  '003005'
 
   #######################################################
   # table 34 [NIM or damper control module] 4 ZONE
@@ -194,8 +252,14 @@ REGISTER_INFO = {
     (REPEATED_8_ZONES, Field.UINT8, 'CurrentHeatSetpoint'),  # segment 4
     (REPEATED_8_ZONES, Field.UINT8, 'CurrentCoolSetpoint'),  # segment 8
     (REPEATED_8_ZONES, Field.UINT8, 'CurrentHumiditySetpoint'),
+    # FanAutoConfig is probably what the SAM refers to as "programmable fan."
+    # If so, it cannot be turned off for Touch thermostats.
     (1, Field.UINT8, 'FanAutoConfig'),  # 1 if fan speed controlled by system
+    # This unknown field is probably a bitmap of zones where the
+    # "hold until" override timer is in use. TODO: verify this
     (1, Field.UNKNOWN),
+    # HoldDuration is probably what the SAM refers to as the
+    # "hold until" override timer, which is 0 if not in use. TODO: verify this
     (REPEATED_8_ZONES, Field.UINT16, 'HoldDuration'),
     (REPEATED_8_ZONES, Field.NAME, 'Name')
   ]),
@@ -221,11 +285,14 @@ REGISTER_INFO = {
     (20, Field.UTF8, 'DealerPhone'), # not writable for Touch thermostats
   ]),
 
+  # write-only SAM 0x9201 (by thermostat 0x2001).
+  # thermostat writes 01 after setpoint update
+  '003b0e': ('SAMUntitled', [
+    (1, Field.UINT8, 'Unknown')
+  ]),
+
   # thermostat/SAM info still to determine:
-  #   get current day of week
   #   get humidifier state
-  #   per-zone "hold until" override timer-in-use
-  #   get/set per-zone "hold until" override timer (0 if not in use)
   #   get/set percentage used: filter, UV lamp, humidifier pad; ventilator pad
   #      (note: can only set 0 percent used)
   #   enable/disable reminders: filter; UV lamp; humidifier pad; ventilator pad
@@ -235,7 +302,6 @@ REGISTER_INFO = {
   #   get system type (cool/heat/heatcool)
   #   get deadband
   #   get cycles per hour
-  #   get programmable fan enable (always on)
   #   get programming state (always on)
   #
   # fields not supported by Touch:
@@ -249,6 +315,26 @@ REGISTER_INFO = {
   #   set program for WAKE/DAY/EVE/SLEEP period
   #      for each period, for each day: heat setpt, cool setpt, fanmode
   #   reset factory defaults
+
+  # heat pump info still to determine (from 25VNA8/24VNA9 Service Manual):
+  # status:
+  #   Suction Thermistor (on suction tube)
+  #   inverter/VSD output frequency and amplitude (?)
+  #   outdoor fan motor speed (?) -- between 400 and 1050 RPM
+  #   suction pressure transducer used to perform low-pressure cutout, etc.
+  #   utility curtailment relay wired between UTIL connections on the control board
+  #     - reports "curtailment YES" in the thermostat UI when relay closed
+  #   fault code reported in thermostat UI
+  #   touch UI service mode: press and HOLD service icon for 10 seconds
+  #   charging mode in Touch UI service mode: service valve subcooling target temp,
+  #     stabilization time, mode/stage(out of 5)/speed (up to 3200 rpm),
+  #     EXV position 0-100%, and indoor airflow.
+
+  # possible status or control of Pressure Equalizer Valve (used at startup)
+
+  # control:
+  #   Touch UI service mode manual closing/opening of Electronic Expansion Valve (EXV)
+  #   Touch UI selectable defrost intervals of 30, 60, 90, or AUTO minutes
 
   #######################################################
   # table 3e DCLEGACY
