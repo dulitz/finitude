@@ -132,12 +132,10 @@ class HvacMonitor:
 
     def store_frame(self, frame, name, rest):
         """If rest is a statechange on name, store the frame."""
-        if not rest:
-            return  # we parsed it all, so nothing to store
         (lastrest, lastframe) = self.register_to_rest.get(name, (None, None))
-        if lastrest == rest:
-            return
         self.register_to_rest[name] = (rest, frame)
+        if (not rest) or lastrest == rest:
+            return  # we parsed it all into Prometheus so nothing to store here
         index = self.framedata_to_index.get(frame.data)
         if index is None:
             index = len(self.framedata_to_index) + 1
