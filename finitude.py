@@ -10,6 +10,8 @@ constantly listening to the HVAC's RS-485 bus and updating our internal state.
 
 import logging, prometheus_client, re, threading, time, yaml
 
+from queue import SimpleQueue, Empty
+
 import frames
 import registers
 import sniffserver
@@ -62,6 +64,9 @@ class HvacMonitor:
         self.name, self.path = name, path
         self.stream, self.bus = None, None
         self.synchronized = False
+        self.pending_frame = None
+        self.send_queue = SimpleQueue()
+
         self.register_to_rest = {}
         self.framedata_to_index = {}
         self.frames = []  # squashed
@@ -115,6 +120,8 @@ class HvacMonitor:
                 else:
                     tablename = self.TABLE_NAME_MAP.get(basename, basename)
                     for (k, v) in values.items():
+                        if is_ack and name == 'TStatZoneParams(3b03)':
+                            self._set_zonename(k, v)
                         self._set_gauge(tablename, k, v)
             devicestr = frames.ParsedFrame.get_printable_address(addr)
             return (f'{devicestr}_{name}', rest)
@@ -145,8 +152,35 @@ class HvacMonitor:
             w = f'WRITE({frames.ParsedFrame.get_printable_address(frame.source)}):'
         self.frames.append((time.time(), w + name, index))
 
+    def send_with_response(self, frame, timeout=1):
+        """Send frame. Wait up to timeout seconds for a response and return it.
+        Returns None on timeout or if the frame could not be sent due to a
+        synchronization issue.
+        """
+        q = SimpleQueue()
+        self.send_queue.put((frame, q, time.time() + timeout))
+        return q.get()
+
+    def _process_send_queue(self, ackframe):
+        if self.pending_frame:
+            (pf, pq, pexpires) = self.pending_frame
+            if pf.source == ackframe.dest and pf.dest == ackframe.source:
+                pq.put(ackframe)
+                self.pending_frame = None
+            elif pexpires < time.time():
+                pq.put(None)
+                self.pending_frame = None
+        if ackframe.func == frames.Function.ACK06 and not self.pending_frame:
+            try:
+                self.pending_frame = self.send_queue.get_nowait()
+                if not self.bus.write(self.pending_frame[0].framebytes):
+                    LOGGER.info(f'{self.name} unable to write {self.pending_frame[0]}')
+                    self.pending_frame = None
+            except Empty:
+                pass
+
     ZONE_RE = re.compile(r'Zone([1-8])(.*)')
-    def _set_gauge(self, tablename, itemname, v):
+    def _set_zonename(self, itemname, v):
         zmatch = HvacMonitor.ZONE_RE.match(itemname)
         zone = int(zmatch.group(1)) if zmatch else None
         if isinstance(v, str):
@@ -156,6 +190,10 @@ class HvacMonitor:
                     if self.zone_to_name[zone-1] != v:
                         LOGGER.info(f'{self.name} zone {zone} has name {v}')
                         self.zone_to_name[zone-1] = v
+            # TODO: emit as a label?
+            return
+    def _set_gauge(self, tablename, itemname, v):
+        if isinstance(v, str):
             # TODO: emit as a label?
             return
         desc = ''
@@ -173,11 +211,10 @@ class HvacMonitor:
             if word:
                 itemname = f'{pre}{"_" if pre else ""}{word.lower()}{"_" if post else ""}{post}'
                 break
-        nonzone = zmatch.group(2) if zmatch else itemname
         if tablename:
-            gaugename = f'finitude_{tablename}_{nonzone.lower()}'
+            gaugename = f'finitude_{tablename}_{itemname.lower()}'
         else:
-            gaugename = f'finitude_{nonzone}'
+            gaugename = f'finitude_{itemname}'
         with HvacMonitor.CV:
             def getgauge(name, desc, morelabels=[]):
                 name = name.replace('(', '').replace(')', '')
@@ -203,6 +240,8 @@ class HvacMonitor:
                 s = 'off' if state == 0 else 'cool' if state < 0 else 'heat'
                 HvacMonitor.HVACSTATE.labels(name=self.name).state(s)
             else:
+                zmatch = HvacMonitor.ZONE_RE.match(itemname)
+                zone = int(zmatch.group(1)) if zmatch else None
                 if zone:
                     gauge = getgauge(gaugename, desc, morelabels=['zone', 'zonename'])
                     zname = self.zone_to_name[zone-1].strip(' \0')
@@ -240,6 +279,10 @@ class HvacMonitor:
                     self.store_frame(frame, name, rest)
                 else:
                     HvacMonitor.FRAME_COUNT.labels(name=self.name).inc()
+                if frame.func in (frames.Function.ACK06,
+                                  frames.Function.ACK02,
+                                  frames.Function.NACK):
+                    self._process_send_queue(frame)
             except (OSError, frames.CarrierError):
                 LOGGER.exception('exception in frame processor, reconnecting')
                 self.stream, self.bus = None, None
