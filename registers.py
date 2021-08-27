@@ -339,13 +339,13 @@ REGISTER_INFO = {
   #######################################################
   # table 3e DCLEGACY
 
-  # Infinitive: read-only from devices 0x5001 or 0x5101
+  # Infinitive: read-only from heat pump 0x5001 or 0x5101
   '003e01': ('HeatPump01', [
     (1, Field.UINT16, 'OutsideTempTimes16'),
     (1, Field.UINT16, 'CoilTempTimes16')
   ]),
 
-  # Infinitive: read-only from devices 0x5001 or 0x5101
+  # Infinitive: read-only from heat pump 0x5001 or 0x5101
   # shift StageShift1 right by one bit to get the stage number
   # higher stage numbers correspond to auxilliary heat on
   '003e02': ('HeatPump02', [
