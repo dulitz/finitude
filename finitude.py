@@ -174,7 +174,8 @@ class HvacMonitor:
             try:
                 pend = self.send_queue.get_nowait()
                 if not self.bus.write(pend[0].framebytes):
-                    LOGGER.info(f'{self.name} unable to write {pend[0]}')
+                    LOGGER.info(f'{self.name} unable to write {pend[0]}; retrying')
+                    self.send_queue.put(pend)  # retry
                 else:
                     self.pending_frame = (frames.ParsedFrame(pend[0].framebytes), pend[1], pend[2])
             except Empty:
