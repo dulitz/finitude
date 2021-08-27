@@ -68,9 +68,31 @@ class Field(Enum):
 
 REPEATED_8_ZONES = -1
 
+_REGINFO = [
+  (1, Field.UINT8, 'Unknown1'),  # often 0
+  (1, Field.UINT8, 'Unknown2'),  # 0x20, 0x21, 0x30, ...
+  (8, Field.UTF8, 'TableName'),
+  (1, Field.UINT8, 'Unknown3'),  # 0 or 1
+  (1, Field.UINT8, 'Unknown4'),  # 0xbc, 0x19, 0x63, ...
+  (1, Field.UINT8, 'NumRegisters'),
+  (0, Field.REPEATING, 'Registers'), # one rep per register in NumRegisters
+  (1, Field.UINT8, 'Length'),
+  (1, Field.UINT8, 'Type'),  # 0: does not exist, 1: read-only, 3: read-write
+  ]
+
 REGISTER_INFO = {
   #######################################################
   # table 01 DEVCONFG
+
+  # RegInfo01 is read-only, unread
+  '000101': ('RegInfo01', _REGINFO),
+
+  # read-only, unread. exists on NIM 0x8001, NACK 0a from 0x2001, no response 0x6001
+  '000102': ('UnknownInfo0102', [
+    (1, Field.UINT8, 'Unknown1'),  # 0x80
+    (1, Field.UINT8, 'Unknown2'),  # 01
+    (1, Field.UINT8, 'Unknown3'),  # 00
+    ]),
 
   # DeviceInfo is read-only (read by thermostat and SAM)
   '000104': ('DeviceInfo', [
@@ -81,7 +103,10 @@ REGISTER_INFO = {
   ]),
 
   #######################################################
-  # table 02 SYSTIME
+  # table 02 SYSTIME [complete vis a vis RegInfo02]
+
+  # RegInfo02 is read-only, unread
+  '000201': ('RegInfo02', _REGINFO),
 
   # SysTime and SysDate are read/write, non-segmented.
   # Thermostat broadcasts updated time and date every minute.
@@ -98,6 +123,9 @@ REGISTER_INFO = {
 
   #######################################################
   # table 03 RLCSMAIN / INGUI
+
+  # RegInfo03 is read-only, unread
+  '000301': ('RegInfo03', _REGINFO),
 
   # read-only air handler, heatpump, damper control devices 0x4001, 0x5201, 0x6001
   '000302': ('Temperatures', [
@@ -167,6 +195,9 @@ REGISTER_INFO = {
 
   #######################################################
   # table 04 DELUXEUI / SSSBCAST
+
+  # RegInfo04 is read-only, unread
+  '000401': ('RegInfo04', _REGINFO),
 
   # write-only unsegmented air handler 0x4001 (from themostat 0x2001)
   '000403': ('UntitledAirHandler03', [
