@@ -417,7 +417,7 @@ class FrameToSend:
       self.sent = self.bus.write(self.frame.framebytes)
       if not self.sent:
         print('failed to send frame, retrying...', file=sys.stderr)
-    if self.sent and frame.source == self.frame.dest an frame.dest == self.frame.source and frame.func in (Function.ACK06, Function.ACK02, Function.NACK):
+    if self.sent and frame.source == self.frame.dest and frame.dest == self.frame.source and frame.func in (Function.ACK06, Function.ACK02, Function.NACK):
       print(f'transaction complete with {frame}', file=sys.stderr)
       return True
     return False
