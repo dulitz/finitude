@@ -195,7 +195,7 @@ class HvacMonitor:
             return
 
     def _set_gauge(self, tablename, itemname, v):
-        if isinstance(v, str):
+        if isinstance(v, str) or isinstance(v, list):
             # TODO: emit as a label?
             return
         desc = ''
