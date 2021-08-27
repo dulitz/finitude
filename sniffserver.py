@@ -47,8 +47,6 @@ def start_sniffserver(port, monitors):
             header = ('', '')
             output = b''
         elif path.endswith('.json'):
-            status = '200 OK'
-            header = ('Content-type', 'application/json')
             js = {}
             for m in monitors:
                 index_frame = sorted([(i, f) for (f, i) in m.framedata_to_index.items()])
@@ -80,16 +78,22 @@ def start_sniffserver(port, monitors):
                     'sequence': outframes,
                     'frames_by_register': [(name, str(rf[1])) for (name, rf) in m.register_to_rest.items()],
                 }
+            status = '200 OK'
+            header = ('Content-type', 'application/json')
             output = json.dumps(js).encode()
         elif path.startswith('/start'):
             LOGGER.info('data collection started')
             for m in monitors:
                 m.set_store_frames(True)
+            status = '200 OK'
+            header = ('', '')
             output = b'data collection started'
         elif path.startswith('/stop'):
             LOGGER.info('data collection stopped')
             for m in monitors:
                 m.set_store_frames(False)
+            status = '200 OK'
+            header = ('', '')
             output = b'data collection stopped'
         elif (path == '/write' or path == '/read') and method == 'POST':
             func = frames.Function.WRITE if path == '/write' else frames.Function.READ
@@ -113,9 +117,12 @@ def start_sniffserver(port, monitors):
                     resp = m.send_with_response(frame, timeout=0.5)
                     LOGGER.info(f'{system} response: {resp}')
                     output = '{\n"request": ' + f'"{frame}",\n"response": "{resp}"\n' + '}\n'
+                    status = '200 OK'
+                    header = ('Content-type', 'application/json')
                     break
             else:
-                status = 408
+                status = '408 Client Error'
+                header = ('', '')
                 output = f'system {system} not found'
             output = output.encode()
         start_response(status, [header])
