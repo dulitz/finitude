@@ -184,7 +184,7 @@ class HvacMonitor:
         zmatch = HvacMonitor.ZONE_RE.match(itemname)
         zone = int(zmatch.group(1)) if zmatch else None
         if isinstance(v, str):
-            if zone and zmatch.group(2) == 'Name' and not tablename:
+            if zone and zmatch.group(2) == 'Name':
                 # then itemname is a zone name, e.g. Zone1Name
                 with HvacMonitor.CV:
                     if self.zone_to_name[zone-1] != v:
@@ -192,6 +192,7 @@ class HvacMonitor:
                         self.zone_to_name[zone-1] = v
             # TODO: emit as a label?
             return
+
     def _set_gauge(self, tablename, itemname, v):
         if isinstance(v, str):
             # TODO: emit as a label?
