@@ -118,9 +118,14 @@ def start_sniffserver(port, monitors):
                                           register + mask + data)
             for m in monitors:
                 if system == m.name:
-                    LOGGER.info(f'{system} writing {frame}')
-                    resp = m.send_with_response(frame, timeout=2.0)
-                    LOGGER.info(f'{system} response: {resp}')
+                    for i in range(4): # try 4 times to write
+                        LOGGER.info(f'{system} writing {frame}')
+                        resp = m.send_with_response(frame, timeout=1.0)
+                        if resp:
+                            LOGGER.info(f'{system} response: {resp}')
+                            break
+                    else:
+                        LOGGER.info(f'{system} no response')
                     r = f'"{resp}"' if resp else 'null'
                     output = '{\n  "request": ' + f'"{frame}",\n  "response": {r}\n' + '}\n'
                     status = '200 OK'
