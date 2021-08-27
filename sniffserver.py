@@ -5,6 +5,11 @@ The sniffserver dumps all the sniffed data. Useful paths:
    /anything.json -- get the data dump
    /stop -- stop data collection
    /start -- restart data collection
+   /read -- send a READ frame
+   /write -- send a WRITE frame
+
+e.g.
+curl --data-urlencode system=lowerlevel --data-urlencode register=0104 --data-urlencode dest=8001 --data-urlencode source=3001 http://10.188.2.175:8001/read
 """
 
 import json, logging, threading
@@ -114,9 +119,10 @@ def start_sniffserver(port, monitors):
             for m in monitors:
                 if system == m.name:
                     LOGGER.info(f'{system} writing {frame}')
-                    resp = m.send_with_response(frame, timeout=0.5)
+                    resp = m.send_with_response(frame, timeout=2.0)
                     LOGGER.info(f'{system} response: {resp}')
-                    output = '{\n"request": ' + f'"{frame}",\n"response": "{resp}"\n' + '}\n'
+                    r = f'"{resp}"' if resp else 'null'
+                    output = '{\n  "request": ' + f'"{frame}",\n  "response": {r}\n' + '}\n'
                     status = '200 OK'
                     header = ('Content-type', 'application/json')
                     break
