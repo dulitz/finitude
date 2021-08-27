@@ -214,10 +214,6 @@ class HvacMonitor:
             if word:
                 itemname = f'{pre}{"_" if pre else ""}{word.lower()}{"_" if post else ""}{post}'
                 break
-        if tablename:
-            gaugename = f'finitude_{tablename}_{itemname.lower()}'
-        else:
-            gaugename = f'finitude_{itemname}'
         with HvacMonitor.CV:
             def getgauge(name, desc, morelabels=[]):
                 name = name.replace('(', '').replace(')', '')
@@ -245,6 +241,11 @@ class HvacMonitor:
             else:
                 zmatch = HvacMonitor.ZONE_RE.match(itemname)
                 zone = int(zmatch.group(1)) if zmatch else None
+                iname = zmatch.group(2) if zmatch else itemname
+                if tablename:
+                    gaugename = f'finitude_{tablename}_{iname.lower()}'
+                else:
+                    gaugename = f'finitude_{iname}'
                 if zone:
                     gauge = getgauge(gaugename, desc, morelabels=['zone', 'zonename'])
                     zname = self.zone_to_name[zone-1].strip(' \0')
