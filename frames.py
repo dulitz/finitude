@@ -178,6 +178,9 @@ class AssembledFrame:
   def framebytes(self):
     return self.frame + struct.pack('<H', self.crc)
 
+  def __str__(self):
+    return 'AssembledFrame:' + str(ParsedFrame(self.framebytes))
+
 
 class ParsedFrame:
   def __init__(self, framebytes):
