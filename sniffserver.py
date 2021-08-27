@@ -9,6 +9,7 @@ The sniffserver dumps all the sniffed data. Useful paths:
 
 import json, logging, threading
 
+from cgi import FieldStorage
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs
 from wsgiref.simple_server import make_server, WSGIServer
@@ -26,9 +27,17 @@ class _ThreadingWSGISniffServer(ThreadingMixIn, WSGIServer):
     daemon_threads = True
 
 
+def convert_word_to_bytes(word):
+    if len(addr) != 4:
+        raise frames.CarrierError(f'{addr} is invalid')
+    assert int(addr, 16)  # raises ValueError if not valid hex
+    return bytes([0, int(addr[0:2], 16], int(addr[2:], 16)])
+
+
 def start_sniffserver(port, monitors):
     def app(environ, start_response):
         # Prepare parameters
+        method = environ.get('REQUEST_METHOD')
         accept_header = environ.get('HTTP_ACCEPT')
         path = environ['PATH_INFO']
         params = parse_qs(environ.get('QUERY_STRING', ''))
@@ -76,10 +85,39 @@ def start_sniffserver(port, monitors):
             LOGGER.info('data collection started')
             for m in monitors:
                 m.set_store_frames(True)
+            output = b'data collection started'
         elif path.startswith('/stop'):
             LOGGER.info('data collection stopped')
             for m in monitors:
                 m.set_store_frames(False)
+            output = b'data collection stopped'
+        elif (path == '/write' or path == '/read') and method == 'POST':
+            func = frames.Function.WRITE if path == '/write' else frames.Function.READ
+            post_env = environ.copy()
+            post_env['QUERY_STRING'] = ''
+            fs = FieldStorage(
+                fp=environ['wsgi.input'], environ=post_env, keep_blank_values=True
+            )
+            system = fs['system'].value
+            register = bytes([0]) + convert_word_to_bytes(fs['register'].value)
+            mask = (bytes([0]) + convert_word_to_bytes(fs['mask'].value)) if 'mask' in fs else b''
+            hex = fs['data'].value if 'data' in fs else b''
+            data = bytes([int(hi + lo, 16) for (hi, lo) in zip(*([iter(hex)]*2))])
+            frame = frames.AssembledFrame(convert_word_to_bytes(fs['dest'].value),
+                                          convert_word_to_bytes(fs['source'].value),
+                                          func,
+                                          register + mask + data)
+            for m in monitors:
+                if system == m.name:
+                    LOGGER.info(f'{system} writing {frame}')
+                    resp = m.send_with_response(frame, timeout=0.5)
+                    LOGGER.info(f'{system} response: {resp}')
+                    output = f'{\n"request": "{frame}",\n"response": "{resp}"\n}\n'
+                    break
+            else:
+                status = 408
+                output = f'system {system} not found'
+            output = output.encode()
         start_response(status, [header])
         return [output]
 
