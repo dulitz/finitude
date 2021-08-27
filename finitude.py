@@ -172,10 +172,11 @@ class HvacMonitor:
                 self.pending_frame = None
         if ackframe.func == frames.Function.ACK06 and not self.pending_frame:
             try:
-                self.pending_frame = self.send_queue.get_nowait()
-                if not self.bus.write(self.pending_frame[0].framebytes):
-                    LOGGER.info(f'{self.name} unable to write {self.pending_frame[0]}')
-                    self.pending_frame = None
+                pend = self.send_queue.get_nowait()
+                if not self.bus.write(pend[0].framebytes):
+                    LOGGER.info(f'{self.name} unable to write {pend[0]}')
+                else:
+                    self.pending_frame = (frames.ParsedFrame(pend[0].framebytes), pend[1], pend[2])
             except Empty:
                 pass
 
