@@ -120,7 +120,7 @@ def start_sniffserver(port, monitors):
                 if system == m.name:
                     for i in range(4): # try 4 times to write
                         LOGGER.info(f'{system} writing {frame}')
-                        resp = m.send_with_response(frame, timeout=1.0)
+                        resp = m.send_with_response(frame, timeout=2.0)
                         if resp:
                             LOGGER.info(f'{system} response: {resp}')
                             break
