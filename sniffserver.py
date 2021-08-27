@@ -31,7 +31,7 @@ def convert_word_to_bytes(word):
     if len(addr) != 4:
         raise frames.CarrierError(f'{addr} is invalid')
     assert int(addr, 16)  # raises ValueError if not valid hex
-    return bytes([0, int(addr[0:2], 16], int(addr[2:], 16)])
+    return bytes([0, int(addr[0:2], 16), int(addr[2:], 16)])
 
 
 def start_sniffserver(port, monitors):
@@ -112,7 +112,7 @@ def start_sniffserver(port, monitors):
                     LOGGER.info(f'{system} writing {frame}')
                     resp = m.send_with_response(frame, timeout=0.5)
                     LOGGER.info(f'{system} response: {resp}')
-                    output = f'{\n"request": "{frame}",\n"response": "{resp}"\n}\n'
+                    output = '{\n"request": ' + f'"{frame}",\n"response": "{resp}"\n' + '}\n'
                     break
             else:
                 status = 408

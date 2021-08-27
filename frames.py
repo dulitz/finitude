@@ -427,7 +427,7 @@ class FrameToSend:
     if len(addr) != 4:
       raise CarrierError(f'{addr} is invalid')
     assert int(addr, 16)  # raises ValueError if not valid hex
-    return bytes([0, int(addr[0:2], 16], int(addr[2:], 16)])
+    return bytes([0, int(addr[0:2], 16), int(addr[2:], 16)])
 
 def main(args):
   """
