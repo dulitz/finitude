@@ -388,17 +388,15 @@ REGISTER_INFO = {
   # 5201: 03
   # 6001: no response
 
-  # LastFaultInfo is read-only air handler 4001, heat pump 5201 (unread)
+  # LastStatus is read-only air handler 4001, heat pump 5201 (unread)
   # 2001, 6001, 8001: NACK 0a
   # 9201: no response
-  '00031c': ('LastFaultInfo', [
-    (1, Field.UINT8, 'Unknown1'),
-    (1, Field.UINT8, 'Unknown2'),  # Type? 1 for delay, 2 for ignition/gas pressure
+  '00031c': ('LastStatus', [
+    (1, Field.UINT8, 'StatusCode'),  # "fault code" for faults
+    # 1 = event, 2 = fault, 3 = system malfunction
+    (1, Field.UINT8, 'Severity'),
     (38, Field.UTF8, 'Message')
   ]),
-  # 4001: 2202 ".IGNITION FAULT
-  # 4001: 2002  .LOW PRESSURE SWITCH OPEN
-  # 5201: 4401 D.10 MIN STAGE 2 WARMUP DELAY
 
   # 031d
   # 4001, 5201, 6001, 8001: NACK 0a
