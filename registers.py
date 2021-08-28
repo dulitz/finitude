@@ -162,12 +162,31 @@ REGISTER_INFO = {
   # SYSTIME has documented all registers in RegInfo02
 
   #######################################################
-  # table 03 RLCSMAIN
+  # table 03 INGUI for thermostat 2001
+
+  # 0301 same as RLCSMAIN
+  # 0302 present but different from Temperatures
+  # 0303-0309 NACK
+  # 030a: 1111 1111 1111 1111 1111 1111 1111
+  # 031c: NACK
+
+  # INGUI has documented all registers in RegInfo03
+
+  #######################################################
+  # table 03 RLCSMAIN 4001, 5201
+
+  # TODO: document r/w for all RegInfo registers in all tables
+
+  # 4001 has 0304, 0305 (r/w), 0306, 0307-0308 (r/w), 030a, 030b-030c (r/w),
+  #      030d-0317, 0318 (r/w), 0319, 031c (r/w)
+  # 6001 has 0308 (r/w), 030a-0315, 0317, 0318 (r/w), 0319
+  # SAM 9201 has 030c (r/w), 030d, 030e, 030f, 0312 (r/w)
 
   # RegInfo03 is read-only (unread)
+  # 8001 no response
   '000301': ('RegInfo03', _REGINFO),
 
-  # Temperatures is read-only 4001, 5201, 6001 (read by thermostat 2001)
+  # Temperatures is read-only 4001, 5201, 6001, 8001 (read by thermostat 2001)
   '000302': ('Temperatures', [
     # types 01, 02, 03, 04 ... 08, 0x14, and 1c from damper control
     # types 0x11, 0x14, and 02 from air handler (all open circuit in our systems)
@@ -190,97 +209,284 @@ REGISTER_INFO = {
   ]),
 
   # read-only heat pump 5201 (from thermostat 2001)
+  # 6001, 8001: no response
   '000303': ('UntitledHeatPump', [
     (4, Field.UNKNOWN),  # 01 30 0b f0
   ]),
 
-  # 0304: read-only 5201 (unread) 0118 003c 0117 00e9 0541 0000 0044 0000
+  # 0304 read-only (unread)
+  # 5201: 0118 003c 0117 00e9 0541 0000 0044 0000
+  # 6001: no response
+  # 8001: NACK 0a
 
-  # 0305: 5201 NACK 0a
+  # 0305
+  # 5201: NACK 0a
+  # 6001, 8001: no response
 
-  # Infinitive: read-only air handler device 0x4001, 0x4101, 0x4201
-  # 5201 NACK 0a
+  # Infinitive: read-only air handler 4001, 4101, 4201
+  # 5201: NACK 0a
+  # 6001: no response
+  # 8001: no response
   '000306': ('AirHandler06', [
     (1, Field.UNKNOWN),
     (1, Field.UINT16, 'BlowerRPM')
   ]),
 
-  # write-only unsegmented air handler 0x4001 (from themostat 0x2001)
-  # 5201 NACK 0a
+  # read-write unsegmented air handler 0x4001 (from themostat 0x2001)
+  # 4001: 00 00 00 (possibly one more byte when writing, in some conditions??)
+  # 5201: NACK 0a
+  # 6001: no response
+  # 8001: no response
   '000307': ('UntitledAirHandler07', [
-    (4, Field.UNKNOWN)
+    (3, Field.UNKNOWN)
   ]),
 
-  # DamperControl is write-only, non-segmented, to damper control 0x6001
+  # DamperControl is read-write, non-segmented, to damper control 0x6001
   # (by thermostat 0x2001). DamperState(0319) is the corresponding read-only
   # state register. Each damper control module will ignore either
   # zones 1-4 or zones 5-8 according to DIP switch settings.
-  # 5201 NACK 0a
+  # 4001: 00 00
+  # 5201: NACK 0a
+  # 8001: NACK 0a
   '000308': ('DamperControl', [
     (REPEATED_8_ZONES, Field.UINT8, 'DamperPosition')  # 0 closed, 0xf full open
   ]),
 
-  # 0309: 5201 NACK 0a
+  # 0309
+  # 4001, 5201: NACK 0a
+  # 6001, 8001: no response
 
   # 030a
+  # 4001, 6001: no response
   # 5201: 03 03 03 05 05 20 00 30 0001 0000 0000
+  # 8001: 0c 00 00 00 00 00 00 00 0000 0000 0000
+
+  # 030b
+  # 4001, 5201, 6001: 0000 0000
+  # 8001: no response
+
+  # 030c
+  # 4001, 5201, 6001, 8001: 4949 ("II")
 
   # read-only from all devices including SAM (by thermostat 0x2001)
   # 7 bytes usually all zeroes; heat pump 14 bytes usually all zeroes;
-  # SAM 3d 3f 00 0000 0000 alternates with 3f 0000 0000 0000
+  # SAM 3d 3f 00 0000 0000 alternates with 3f 00 00 0000 0000
   # '00030d':
 
-  # Infinitive: read-only air handler device 0x4001, 0x4101, or 0x4201
+  # are these counters?
+  '00030e': ('UnknownOneByte', [
+    (0, Field.REPEATING, 'OneByte'),
+    (1, Field.UINT8, 'Tag'),
+    (1, Field.UINT8, 'Value'),
+  ]),
+  # 4001 system 1: 0c00 0d00 0e00 0f00 1500 1600 1700 1800 1900 1f00 20ff 2110 2202 2300 2900 2a02 2bff 2c00 2d00
+  # 4001 system 2: 0c00 0d24 0e78 0f00 1500 1600 1700 1800 1900 1fff 20ff 2176 22ff 2300 2900 2aff 2bff 2c00 2d00
+  # 5201: 1900 1f00 2d00 3000 3400 3500 3600 3700 3800 3900 3a00 4200 4300 4404 4500 4700 4a00 4c00 5200 5300 5400 5600 5800 5f00 6000 6100 6202 6301 0000000000000000000000000000000000000000000000000000000000000000000000000000
+  # 6001: no response
+  # 8001: 1006 2d00 2e09 3500
+
+  # are these counters?
+  # the tags are related to the tags in register 030e
+  '00030f': ('UnknownTwoByte', [
+    (0, Field.REPEATING, 'TwoByte'),
+    (1, Field.UINT8, 'Tag'),
+    (1, Field.UINT16, 'Value'),
+  ]),
+  # 4001: 0c0000 0d0000 0e0000 0f0000 150000 160000 170000 180000 190000 1f0000 200263 210012 220003 230000 290000 2a0003 2b26d8 2c0000 2d0000
+  # 5201: 190000 1f0000 2d0000 300000 340000 350000 360000 370000 380000 390000 3a0000 420000 430000 440004 450000 470000 4a0000 4c0000 520000 530000 540000 560000 580000 5f0000 600000 610000 620002 630001 serialnumber[343431393033323031393000323031394530393631322020202020202020202020202020] 368fc2060e5872000000000000f601a78d4411010f
+  # 6001: 100006 18000a 2d0000 2e0001 340000 360000 370000
+  # 8001: 100006 2d0000 2e0009 350000
+
+  # are these counters?
+  # seems to be the same as 0314 (except for 6001)
+  '000310': ('UnknownThreeByte', [
+    (0, Field.REPEATING, 'ThreeByte'),
+    (1, Field.UINT8, 'Tag'),
+    (1, Field.UINT8, "Unknown"),
+    (1, Field.UINT16, 'Value'),
+  ]),
+  # 4001: 2300db9c 240001e2 27000da0 28000000 2b0003e1 2d012701 480002a8
+  # 5201: 23000348 2800008d 3c0001a0 2b000007
+  # 6001: no response
+  # 8001: 23000001 24000000 28000872 2700052d 3c000000 380034b9 3900002a 2b000063
+
+  # are these counters?
+  # these tags are related to the tags in 0310
+  # seems to be the same as 0315
+  '000311': ('UnknownThreeByteBookend', [
+    (0, Field.REPEATING, 'ThreeByte'),
+    (1, Field.UINT8, 'Tag'),
+    (1, Field.UINT8, "Unknown"),
+    (1, Field.UINT16, 'Value'),
+  ]),
+  # 4001: 25002524 26000068 290002d6 2a000000 2e00693a 2c01952f 49000134
+  # 5201: 25000c05 2a000384 3d00001c 2c002580
+  # 6001: no response
+  # 8001: 25000000 26000000 2a00006d 29000001 3d000000 3a001447 3b0042d5 2c019462
+
+  # 0312
+  # 4001: 000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+  # 5201: NAK 0a
+  # 6001: 0710 1323 060a 1410 0b34 0402 1410 0411 100c 1318 080f 0e03 1318 0931 1902 1310 0931 1902 1310 0323 1008 11
+  # 8001: 0710 1222 060a 1410 1326 1806 142e ffff ffff ff2e 0612 1002 0d2e 052c 1002 0d2e 0409 1002 0d2e 0227 1002 0d
+
+  # 0313
+  # 4001: f0
+  # 5201, 8001: c9
+  # 6001: no response
+
+  # 0314 seems to be the same as 0310 (except for 6001)
+  # 4001: 2300db9c 240001e2 27000da0 28000000 2b0003cc 2d012701 480002a8
+  # 5201: 23000348 2800008d 3c0001a0 2b000007
+  # 6001: 38001d6c 39003802 2b0007b5
+  # 8001: 23000001 24000000 28000872 2700052d 3c000000 380034b9 3900002a 2b000063
+
+  # 0315 seems to be the same as 0311
+  # 4001: 25002524 26000068 290002d6 2a000000 2e00693a 2c01952f 49000134
+  # 5201: 25000c05 2a000384 3d00001c 2c002580
+  # 6001: no response
+  # 8001: 25000000 26000000 2a00006d 29000001 3d000000 3a001447 3b0042d5 2c019462
+
+  # Infinitive: read-only air handler 4001, 4101, 4201
+  # 4001: all fields zero with unparsed 0000 0078 0100 020d
+  # 5201: NAK 0a
+  # 6001: no response
+  # 8001: all fields zero with unparsed 0000 0000 0100 0000 00
   '000316': ('AirHandler16', [
     (1, Field.UINT8, 'State'),  # State & 0x03 != 0 when electric heat is on
     (3, Field.UNKNOWN),
     (1, Field.UINT16, 'AirflowCFM')
   ]),
 
+  # 0317
+  # 4001: 07210b37080515210f0c010515210e0f16041521131e150415210f22040215210c00000000000000000000
+  # 5201: 07440e161c071504ec052a030d2bef7704db040992012a0000000000000000cb0304a062110114031502b3028c0306541977060b0905fa0258000000000000000017015e7163110114031502b3028c0306541977060b0905fa0258000000000000000017015e716210151b0a1403ce0392030a5b1b7605d108054002580000000000000000f601a78d4411010f0a1404cc050b030a29ef7404a8030990027c0000000000000000c0030d964412170d08140560054e03054bef77050804098801360000000000000000f702e6a3440a221707140406042c030724ef76030e020971000000000000000000005603ab8b
+  # 6001: 07101323060a14100b34040214100411100c13180931190213100931190213100323100811100913040b0b
+  # 8000: 07101222060a141013261806142effffffffff2e061210020d2e052c10020d2e040910020d2e022710020d
+
+  # 0318
+  # 4001: no response
+  # 5201, 6001, 8001: 49
+
   # DamperState is read-only damper control 0x6001 (by thermostat 0x2001).
-  # DamperControl(0308) is the corresponding write-only control.
+  # DamperControl(0308) is the corresponding writable control.
   # Zones 1-4 or zones 5-8 will be reported as 0xff for zones not connected
   # to this device according to DIP switch settings.
-  # 5201 has this register but it is shorter and means something else *******
+  # 4001 has this register but it is shorter [0000] and means something else *****
+  # 5201 has this register but it is shorter [0011] and means something else *****
+  # 8001: NACK 0a
   '000319': ('DamperState', [
     (REPEATED_8_ZONES, Field.UINT8, 'DamperPosition')  # 0xff for zone not present
   ]),
 
   # 031a
-  # 5201: NACK 0a
+  # 4001 5201: NACK 0a
+  # 6001, 8001: no response
 
   # 031b
+  # 4001, 8001: NACK 0a
   # 5201: 03
+  # 6001: no response
 
-  # 031c
-  # 5201: 44013130204d494e2053544147452032205741524d55502044454c41590000000000000000000000
-  #       D   10 MIN STAGE 2 WARMUP DELAY
+  # LastFaultInfo is read-only air handler 4001, heat pump 5201 (unread)
+  # 2001, 6001, 8001: NACK 0a
+  # 9201: no response
+  '00031c': ('LastFaultInfo', [
+    (1, Field.UINT8, 'Unknown1'),
+    (1, Field.UINT8, 'Unknown2'),  # Type? 1 for delay, 2 for ignition/gas pressure
+    (38, Field.UTF8, 'Message')
+  ]),
+  # 4001: 2202 ".IGNITION FAULT
+  # 4001: 2002  .LOW PRESSURE SWITCH OPEN
+  # 5201: 4401 D.10 MIN STAGE 2 WARMUP DELAY
 
   # 031d
-  # 5201: NACK 0a
+  # 4001, 5201, 6001, 8001: NACK 0a
 
   # 031e
-  # 5201: NACK 0a
+  # 4001, 5201, 8001: NACK 0a
+  # 6001: no response
 
   # 031f
+  # 4001, 6001, 8001: NACK 0a
   # 5201: 208 zero bytes
 
   # 0320
+  # 4001, 6001, 8001: NACK 0a
   # 5201: 208 zero bytes
 
   # 0321
+  # 4001, 6001, 8001: NACK 0a
   # 5201: 208 zero bytes
 
+  # 0322
+  # 4001: NACK 0a
+  # 6001, 8001: no response
+
+  # 0323
+  # 4001, 6001, 8001: NACK 0a
+
+  # 0324
+  # 4001, 6001, 8001: NACK 0a
+
+  # 0325
+  # 4001: NACK 0a
+  # 6001, 8001: no response
+
+  # 0326
+  # 4001, 8001: NACK 0a
+  # 6001: no response
+
+  # RLCSMAIN has documented all registers in RegInfo02 for device 5201
+
   #######################################################
-  # table 04 DELUXEUI / SSSBCAST
+  # table 04 SSSBCAST for thermostat 2001
+
+  # 0401 RegInfo04
+  # 0420 0000000000000000000000000000000000000000
+
+  # SSSBCAST has documented all registers in RegInfo04
+
+  #######################################################
+  # table 04 SAM INTF for SAM 9201
+
+  # 0401 RegInfo04
+  # 040e 5033303336363331000000000000000021
+  # 0420 000073ffff57ff5700ffff031854186a54540000
+
+  # SAM INTF has documented all registers in RegInfo04
+
+  #######################################################
+  # table 04 VARSPEED for air handler 4001
+
+  # 5201 NACKs all registers including RegInfo04
+  # 6001 no response to any register except to 0402 and 0409: NACK 04
+  # 8001 NACKs most registers inluding RegInfo04, no response to the others
 
   # RegInfo04 is read-only, unread
   '000401': ('RegInfo04', _REGINFO),
 
-  # write-only unsegmented air handler 0x4001 (from themostat 0x2001)
+  # 0402 5a7896b4781d 358ec4741d 34978da41d b4eaad511d 324813a602 3004ba02c6 (sys 1)
+  # 0402 5a7896b4781d 34b0fee01d 36054aa81d b5e462881d 34a265e902 3005a002cb (sys 2)
+
+  # read-write unsegmented air handler 0x4001 (from themostat 0x2001)
   '000403': ('UntitledAirHandler03', [
-    (4, Field.UNKNOWN)
+    (4, Field.UNKNOWN)  # 00 01 01 00 when operating or not, COOL mode
   ]),
+
+  # 0404 1078 1006 0207 0000 0000 00000000 000a 0000 (sys 1)
+  # 0404 1078 1206 0a37 0518 04d1 00000000 000a 0605 (sys 2)
+
+  # 0405 0100 0000 0000 0000 020000 0000 0000 0000 0100000000 (sys 1)
+  # 0405 0110 0000 7800 0500 000000 000f 0019 0000 0100000000 (sys 2)
+
+  # 0406 0000 0000 0000 0000 0000 0078 01 (sys 1)
+  # 0406 0000 0200 051d 0000 0000 0078 01 (sys 2)
+
+  # 0407 0000 (sys 1)
+  # 0407 0519 (sys 2)
+
+  # 0408 00 0000 0000
 
   # read/write, non-segmented air handler 0x4001
   # (from thermostat 0x2001).
@@ -288,24 +494,40 @@ REGISTER_INFO = {
     (4, Field.UNKNOWN),  # most bytes zero, second byte sometimes 1
   ]),
 
+  # 040a-040b NACK 0a
+
   # read-only (?) 4001 (from thermostat 2001).
   # NACKed by 58MVC
   # '00041b'
 
-  #######################################################
-  # table 06
+  # VARSPEED has documented all registers in RegInfo04
 
-  # write-only unsegmented heat pump 0x5201 (from themostat 0x2001)
+  #######################################################
+  # table 05
+
+  # 0501: NACK 04 by 2001, 4001, 5201, 6001, 8001, 9201
+
+  #######################################################
+  # table 06 LINESET for thermostat 2001
+
+  # RegInfo06 is read-only, unread
+  # NACK 04 by 8001, 9201
+  '000601': ('RegInfo06', _REGINFO),
+
+  #######################################################
+  # table 06 VAR COMP for heat pump 5201
+
+  # read-write unsegmented heat pump 0x5201 (from themostat 0x2001)
   '00060d': ('UntitledHeatPump0d', [
     (1, Field.UINT8, 'Unknown')
   ]),
 
-  # write-only unsegmented heat pump 0x5201 (from themostat 0x2001)
+  # read-write unsegmented heat pump 0x5201 (from themostat 0x2001)
   '000610': ('UntitledHeatPump10', [
     (4, Field.UNKNOWN)
   ]),
 
-  # write-only unsegmented heat pump 0x5201 (from themostat 0x2001)
+  # read-write unsegmented heat pump 0x5201 (from themostat 0x2001)
   '00061a': ('UntitledHeatPump1a', [
     (1, Field.UINT8, 'Unknown')
   ]),
@@ -313,21 +535,28 @@ REGISTER_INFO = {
   #######################################################
   # table 30 EECONFIG
 
+  '003001': ('RegInfo30', _REGINFO),
+
   # read-only (?) thermostat 0x2001 (from SAM 0x9201)
   # appears to be NACKed by Touch thermostat firmware 3.60
-  '003005'
+  # '003005'
 
   #######################################################
   # table 34 [NIM or damper control module] 4 ZONE
 
+  '003401': ('RegInfo34', _REGINFO),
+
   # HVRState is read/write, non-segmented damper control 0x6001
   # (from thermostat 0x2001).
+  # TODO: is this also sent to the NIM in system 1?
   '003404': ('HRVState', [
     (1, Field.UINT8, 'Speed')  # 0 off, 1 low, 2 med, 3 high
   ]),
 
   #######################################################
   # table 3b [thermostat] AI PARMS / NVMINIT
+
+  '003b01': ('RegInfo3b', _REGINFO),
 
   # Infinitive: read/write segmented; thermostat 0x2001
   '003b02': ('TStatCurrentParams', [
@@ -394,7 +623,7 @@ REGISTER_INFO = {
     (20, Field.UTF8, 'DealerPhone'), # not writable for Touch thermostats
   ]),
 
-  # write-only SAM 0x9201 (by thermostat 0x2001).
+  # read-write SAM 0x9201 (by thermostat 0x2001).
   # thermostat writes 01 after setpoint update
   '003b0e': ('SAMUntitled', [
     (1, Field.UINT8, 'Unknown')
