@@ -88,7 +88,13 @@ class HvacMonitor:
         is_write = frame.func == frames.Function.WRITE
         is_ack = frame.func == frames.Function.ACK06
         if frame.length >= 3 and (is_write or is_ack):
-            (name, values, rest) = frame.parse_register()
+            try:
+                (name, values, rest) = frame.parse_register()
+            except IndexError as e:  # then it failed to parse
+                name = frame.get_printable_register()
+                values = { 'ERROR': f'parsing: {e}' }
+                rest = frame.data
+                LOGGER.warning(f'failed to parse {name} with {rest}: {e}')
             (basename, paren, num) = name.partition('(')
             addr = frame.source if is_ack else frame.dest
             if values:
