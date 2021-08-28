@@ -76,7 +76,11 @@ _REGINFO = [
   (1, Field.UINT8, 'Unknown4'),  # 0xbc, 0x19, 0x63, ...
   (1, Field.UINT8, 'NumRegisters'),
   (0, Field.REPEATING, 'Registers'), # one rep per register in NumRegisters
-  (1, Field.UINT8, 'Length'),
+  # Registers in this table may still return NACK if you try to read them;
+  # maybe they are unreadable in certain modes, or maybe something else.
+  # Length and type both 0xde mean register does not exist under some
+  # conditions (all conditions?): heat pump 5201.
+  (1, Field.UINT8, 'Length'),    # if 0, register does not exist
   (1, Field.UINT8, 'Type'),  # 0: does not exist, 1: read-only, 3: read-write
   ]
 
@@ -84,17 +88,28 @@ REGISTER_INFO = {
   #######################################################
   # table 01 DEVCONFG
 
-  # RegInfo01 is read-only, unread
+  # RegInfo01 is read-only from all devices (unread)
+  # no response 6001, 9201
   '000101': ('RegInfo01', _REGINFO),
 
-  # read-only, unread. exists on NIM 0x8001, NACK 0a from 0x2001, no response 0x6001
-  '000102': ('UnknownInfo0102', [
-    (1, Field.UINT8, 'Unknown1'),  # 0x80
-    (1, Field.UINT8, 'Unknown2'),  # 01
-    (1, Field.UINT8, 'Unknown3'),  # 00
+  # AddressInfo is read-only from all devices (unread)
+  # NACK 0a from 2001
+  '000102': ('AddressInfo', [
+    (1, Field.UINT8, 'DeviceClass'),  # MSB of the address
+    (1, Field.UINT8, 'DeviceBus'),    # LSB of the address
+    (1, Field.UINT8, 'Unknown'),      # zero
     ]),
 
-  # DeviceInfo is read-only (read by thermostat and SAM)
+  # read-only from 4001, 5201, 6001, 8001 (unread)
+  # NACK 0a from 2001, no response 9201
+  '000103': ('UnknownInfo0103', [
+    (1, Field.UINT8, 'Unknown1'),  # 0x60
+    (1, Field.UINT8, 'Unknown2'),  #    0
+    (1, Field.UINT8, 'Unknown3'),  #    0
+    (1, Field.UINT8, 'Unknown4'),  #    0
+    ]),
+
+  # DeviceInfo is read-only from all devices (read by thermostat and SAM)
   '000104': ('DeviceInfo', [
     (48, Field.UTF8, 'Module'),
     (16, Field.UTF8, 'Firmware'),
@@ -102,10 +117,19 @@ REGISTER_INFO = {
     (36, Field.UTF8, 'Serial')
   ]),
 
+  # 0105: 01 followed by all zeroes from 4001, 5201, 6001, and 9201
+  # NACK from 2001, no response from 8001
+
+  # 0106: 0000 6358 5800 for 4001, 5201, 8001
+  # NACK from 2001, no response from 6001
+
+  # DEVCONFG has documented all registers in RegInfo01
+
   #######################################################
-  # table 02 SYSTIME [complete vis a vis RegInfo02]
+  # table 02 SYSTIME
 
   # RegInfo02 is read-only, unread
+  # no response from 6001, 8001, 9201
   '000201': ('RegInfo02', _REGINFO),
 
   # SysTime and SysDate are read/write, non-segmented.
@@ -121,13 +145,29 @@ REGISTER_INFO = {
     (1, Field.UINT8, 'Year')
   ]),
 
-  #######################################################
-  # table 03 RLCSMAIN / INGUI
+  # only thermostat has 0205, 0206, 0207, 0208, 0209, 020a
 
-  # RegInfo03 is read-only, unread
+  # 0205 both systems: 0000 5000 4eff ff00 004e 4e4e 4e00 6d79 4856 4143 0000000000000000000000000000000000000000000000000000 6876 6163 7379 7374 656d 000000000000000000000000000000000000000000 0009 ffff ffff ffff 0000 0000
+
+  # 0206 both systems: 0000 0000 0000 0000
+
+  # 0207 both systems: 0000 0000
+
+  # 0208 both systems: 0000
+
+  # 0209 both systems: 0103 02b9 0309 0143
+
+  # 020a both systems: 0000
+
+  # SYSTIME has documented all registers in RegInfo02
+
+  #######################################################
+  # table 03 RLCSMAIN
+
+  # RegInfo03 is read-only (unread)
   '000301': ('RegInfo03', _REGINFO),
 
-  # read-only air handler, heatpump, damper control devices 0x4001, 0x5201, 0x6001
+  # Temperatures is read-only 4001, 5201, 6001 (read by thermostat 2001)
   '000302': ('Temperatures', [
     # types 01, 02, 03, 04 ... 08, 0x14, and 1c from damper control
     # types 0x11, 0x14, and 02 from air handler (all open circuit in our systems)
@@ -149,18 +189,24 @@ REGISTER_INFO = {
     # 0x8001 ends at 1 rep, 0x4001 ends at 3 reps, 0x5201 and 0x6001 end at 6 reps
   ]),
 
-  # read-only (?) heat pump 0x5201 (from thermostat 0x2001)
+  # read-only heat pump 5201 (from thermostat 2001)
   '000303': ('UntitledHeatPump', [
     (4, Field.UNKNOWN),  # 01 30 0b f0
   ]),
 
+  # 0304: read-only 5201 (unread) 0118 003c 0117 00e9 0541 0000 0044 0000
+
+  # 0305: 5201 NACK 0a
+
   # Infinitive: read-only air handler device 0x4001, 0x4101, 0x4201
+  # 5201 NACK 0a
   '000306': ('AirHandler06', [
     (1, Field.UNKNOWN),
     (1, Field.UINT16, 'BlowerRPM')
   ]),
 
   # write-only unsegmented air handler 0x4001 (from themostat 0x2001)
+  # 5201 NACK 0a
   '000307': ('UntitledAirHandler07', [
     (4, Field.UNKNOWN)
   ]),
@@ -169,9 +215,15 @@ REGISTER_INFO = {
   # (by thermostat 0x2001). DamperState(0319) is the corresponding read-only
   # state register. Each damper control module will ignore either
   # zones 1-4 or zones 5-8 according to DIP switch settings.
+  # 5201 NACK 0a
   '000308': ('DamperControl', [
     (REPEATED_8_ZONES, Field.UINT8, 'DamperPosition')  # 0 closed, 0xf full open
   ]),
+
+  # 0309: 5201 NACK 0a
+
+  # 030a
+  # 5201: 03 03 03 05 05 20 00 30 0001 0000 0000
 
   # read-only from all devices including SAM (by thermostat 0x2001)
   # 7 bytes usually all zeroes; heat pump 14 bytes usually all zeroes;
@@ -189,9 +241,35 @@ REGISTER_INFO = {
   # DamperControl(0308) is the corresponding write-only control.
   # Zones 1-4 or zones 5-8 will be reported as 0xff for zones not connected
   # to this device according to DIP switch settings.
+  # 5201 has this register but it is shorter and means something else *******
   '000319': ('DamperState', [
     (REPEATED_8_ZONES, Field.UINT8, 'DamperPosition')  # 0xff for zone not present
   ]),
+
+  # 031a
+  # 5201: NACK 0a
+
+  # 031b
+  # 5201: 03
+
+  # 031c
+  # 5201: 44013130204d494e2053544147452032205741524d55502044454c41590000000000000000000000
+  #       D   10 MIN STAGE 2 WARMUP DELAY
+
+  # 031d
+  # 5201: NACK 0a
+
+  # 031e
+  # 5201: NACK 0a
+
+  # 031f
+  # 5201: 208 zero bytes
+
+  # 0320
+  # 5201: 208 zero bytes
+
+  # 0321
+  # 5201: 208 zero bytes
 
   #######################################################
   # table 04 DELUXEUI / SSSBCAST
@@ -210,7 +288,7 @@ REGISTER_INFO = {
     (4, Field.UNKNOWN),  # most bytes zero, second byte sometimes 1
   ]),
 
-  # read-only (?) air handler 0x4001 (from thermostat 0x2001).
+  # read-only (?) 4001 (from thermostat 2001).
   # NACKed by 58MVC
   # '00041b'
 
@@ -282,7 +360,7 @@ REGISTER_INFO = {
     (1, Field.UINT8, 'ZonesHolding'),  # segment 2; LSB is zone 1, MSB is zone 8
     (REPEATED_8_ZONES, Field.UINT8, 'CurrentHeatSetpoint'),  # segment 4
     (REPEATED_8_ZONES, Field.UINT8, 'CurrentCoolSetpoint'),  # segment 8
-    (REPEATED_8_ZONES, Field.UINT8, 'CurrentHumiditySetpoint'),
+    (REPEATED_8_ZONES, Field.UINT8, 'CurrentHumidityTarget'),
     # FanAutoConfig is probably what the SAM refers to as "programmable fan."
     # If so, it cannot be turned off for Touch thermostats.
     (1, Field.UINT8, 'FanAutoConfig'),  # 1 if fan speed controlled by system
@@ -364,22 +442,27 @@ REGISTER_INFO = {
   # possible status or control of Pressure Equalizer Valve (used at startup)
 
   # control:
-  #   Touch UI service mode manual closing/opening of Electronic Expansion Valve (EXV)
-  #   Touch UI selectable defrost intervals of 30, 60, 90, or AUTO minutes
+  #   service UI manual closing/opening of Electronic Expansion Valve (EXV)
+  #   service UI has heat source lockout settings
+  #   service UI selectable defrost intervals of 30, 60, 90, or AUTO minutes
+  #   service UI has "full installation" button to be used when address changes
+  #   service UI has "test mode" to test heating/cooling at full capacity
 
   #######################################################
   # table 3e DCLEGACY
 
-  # Infinitive: read-only from heat pump 0x5001 or 0x5101
-  '003e01': ('HeatPump01', [
+  # Infinitive says this is read-only from heat pump 0x5001 or 0x5101.
+  # 25VNA8 responds NACK 04
+  '003e01': ('LegacyHeatPumpTemperatures', [
     (1, Field.UINT16, 'OutsideTempTimes16'),
     (1, Field.UINT16, 'CoilTempTimes16')
   ]),
 
-  # Infinitive: read-only from heat pump 0x5001 or 0x5101
-  # shift StageShift1 right by one bit to get the stage number
-  # higher stage numbers correspond to auxilliary heat on
-  '003e02': ('HeatPump02', [
+  # Infinitive says this is read-only from heat pump 0x5001 or 0x5101.
+  # 25VNA8 responds NACK 04
+  '003e02': ('LegacyHeatPumpStage', [
+    # Shift right by one bit to get the stage number.
+    # Higher stage numbers correspond to auxilliary heat on.
     (1, Field.UINT8, 'StageShift1')
   ]),
 }
