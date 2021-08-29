@@ -113,10 +113,20 @@ class HvacMonitor:
                             state = str(s['State'])
                         if s['Type'] >= 1 and s['Type'] <= 8:
                             stype = f'Zone{s["Type"]}'
+                        elif s['Type'] == 0x11:
+                            stype = 'OAT'
+                        elif s['Type'] == 0x12:
+                            stype = 'OCT'
                         elif s['Type'] == 0x14:
-                            stype = 'LAT'  # FIXME: may be HPT
+                            stype = 'LAT'
                         elif s['Type'] == 0x1c:
-                            stype = 'HPT'  # FIXME: may be LAT
+                            stype = 'HPT'
+                        elif s['Type'] == 0x30:
+                            stype = 'suction'
+                        elif s['Type'] == 0x45:
+                            stype = 'discharge'
+                        elif s['Type'] == 0x4a:
+                            stype = 'superheat'
                         else:
                             stype = str(s['Type'])
                         temp = s['TempTimes16']
