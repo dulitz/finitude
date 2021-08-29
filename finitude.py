@@ -198,11 +198,17 @@ class HvacMonitor:
                     if self.zone_to_name[zone-1] != v:
                         LOGGER.info(f'{self.name} zone {zone} has name {v}')
                         self.zone_to_name[zone-1] = v
-            # TODO: emit as a label?
-            return
 
-    def _set_gauge(self, tablename, itemname, v):
-        if isinstance(v, str) or isinstance(v, list):
+    def _set_gauge(self, tablename, itemname, v, labelpair=None):
+        if isinstance(v, list):
+            if v and (v[0].get('Tag') is not None) and labelpair is None:
+                for d in v:
+                    tag = str(d['Tag'])
+                    for (subkey, val) in d.items():
+                        if subkey != 'Tag':
+                            _set_gauge(tablename, f'{itemname}_{subkey}', val, ('tag', tag))
+            return
+        elif isinstance(v, str):
             # TODO: emit as a label?
             return
         desc = ''
@@ -230,6 +236,7 @@ class HvacMonitor:
                 return gauge
 
             if itemname == 'Mode' and not tablename:
+                assert not labelpair, labelpair
                 # the lower 5 bits are the mode; upper bits are stage number
                 mode = v & 0x1f
                 modegauge = getgauge('finitude_mode', 'current operating mode', ['state'])
@@ -253,6 +260,7 @@ class HvacMonitor:
                 else:
                     gaugename = f'finitude_{iname}'
                 if zone:
+                    assert not labelpair, labelpair
                     gauge = getgauge(gaugename, desc, morelabels=['zone', 'zonename'])
                     zname = self.zone_to_name[zone-1].strip(' \0')
                     if zname:
@@ -262,8 +270,13 @@ class HvacMonitor:
                     else:
                         LOGGER.debug(f'ignoring {gaugename} in {zone}: no zonename')
                 else:
-                    gauge = getgauge(gaugename, desc)
-                    gauge.labels(name=self.name).set(v / divisor)
+                    if labelpair:
+                        gauge = getgauge(gaugename, desc, morelabels=[labelpair[0]])
+                        kwargs = { 'name': self.name, labelpair[0]: labelpair[1] }
+                        gauge.labels(**kwargs).set(v / divisor)
+                    else:
+                        gauge = getgauge(gaugename, desc)
+                        gauge.labels(name=self.name).set(v / divisor)
 
     def _report_crc_error(self):
         if self.synchronized:
