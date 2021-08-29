@@ -206,7 +206,7 @@ class HvacMonitor:
                     tag = str(d['Tag'])
                     for (subkey, val) in d.items():
                         if subkey != 'Tag':
-                            _set_gauge(tablename, f'{itemname}_{subkey}', val, ('tag', tag))
+                            self._set_gauge(tablename, f'{itemname}_{subkey}', val, ('tag', tag))
             return
         elif isinstance(v, str):
             # TODO: emit as a label?
