@@ -188,19 +188,20 @@ REGISTER_INFO = {
 
   # Temperatures is read-only 4001, 5201, 6001, 8001 (read by thermostat 2001)
   '000302': ('Temperatures', [
-    # types 01, 02, 03, 04 ... 08, 0x14, and 1c from damper control
+    # types 01, 02, 03, 04 ... 08, 0x14, and 1c from zone damper control
     # types 0x11, 0x14, and 02 from air handler (all open circuit in our systems)
-    # types 0x11, 0x12, 0x30, 4a, 4b, 0x45 from heat pump (all present on system 2)
+    # types 0x11, 0x12, 0x30, 0x45, 4a, 4b from heat pump (all present on system 2)
     #    zone temperature sensors 01, 02, ... 08
-    #    outdoor air temperature is type 17 (0x11)
+    #    OAT (outdoor air temperature) is type 17 (0x11)
+    #    OCT (outdoor coil temperature) is type 18 (0x12)
     #    LAT (leaving air temperature) is type 20 (0x14)
-    #    HPT (heat pump temperature) is type 28 0x1c
-    #    outdoor coil temperature is type 48 (0x30)
+    #    HPT (heat pump temperature) is type 28 (0x1c)
+    #    suction temperature is type 48 (0x30)
     #    discharge line temperature is type 69 (0x45)
-    #    type 74 (0x4a) seems to be a difference: usually 0 or 1, goes up
-    #       when system in use
+    #    suction superheat is type 74 (0x4a)
     #    type 75 (0x4b) is about 6 degrees less than OAT in all conditions
-    #    suction tube temperature is type 18? 18 goes up somewhat during use
+    # According to Carrier service manual, system operation is not affected
+    # by the presence or absence of LAT and HPT -- they are for UI only.
     (0, Field.REPEATING, 'TempSensors'),
     (1, Field.UINT8, 'State'),  # 01 = connected, 04 = open circuit
     (1, Field.UINT8, 'Type'),
@@ -211,10 +212,10 @@ REGISTER_INFO = {
   # read-only heat pump 5201 (from thermostat 2001)
   # 6001, 8001: no response
   '000303': ('UntitledHeatPump', [
-    (4, Field.UNKNOWN),  # 01 30 0b f0
+    (4, Field.UNKNOWN),  # 01 30 0b f0 / 01 30 05 d0
   ]),
 
-  # 0304 read-only (unread)
+  # 0304 read-only (thermostat reads from heat pump)
   # 5201: 0118 003c 0117 00e9 0541 0000 0044 0000
   # 6001: no response
   # 8001: NACK 0a
@@ -296,6 +297,15 @@ REGISTER_INFO = {
   # 5201: 190000 1f0000 2d0000 300000 340000 350000 360000 370000 380000 390000 3a0000 420000 430000 440004 450000 470000 4a0000 4c0000 520000 530000 540000 560000 580000 5f0000 600000 610000 620002 630001 serialnumber[343431393033323031393000323031394530393631322020202020202020202020202020] 368fc2060e5872000000000000f601a78d4411010f
   # 6001: 100006 18000a 2d0000 2e0001 340000 360000 370000
   # 8001: 100006 2d0000 2e0009 350000
+
+  # heat pump information shown in service UI not yet accounted for:
+  # stage number (0-5)
+  # compressor RPM (4300 nominal max)
+  # suction pressure (94 psig)
+  # EXV position (0-100%)
+  # line voltage (234)
+  # curtailment yes/no
+  # static pressure (1.28)
 
   # are these counters?
   # seems to be the same as 0314 (except for 6001)
@@ -515,20 +525,67 @@ REGISTER_INFO = {
   #######################################################
   # table 06 VAR COMP for heat pump 5201
 
-  # read-write unsegmented heat pump 0x5201 (from themostat 0x2001)
+  # 0602 (from thermostat 2001)
+  # 91002000035cff091f01df090352
+
+  # 0604 (from thermostat 2001)
+  # 10e010e605dc0af00cdf10e0151805dc099c0af00e4210e0
+
+  # 0605 (from thermostat 2001)
+  # thermostat controls heat pump using this
+  # 40a00000010000
+
+  # 0608 (from thermostat 2001)
+  # 000064000004c1
+
+  # 060a (from thermostat 2001)
+  # 53414e4855415331373038323334303253414e4855414531333038303234303100d200000fa006a40a8c06400069006400460066096008fc004b004d005a005f00b900be005a005f0014001e005e006610db035c00190000000000000000004d00008c1e094300a40f3004c0003c0041003d004b00020002 b'\x00\x06\nSANHUAS170823402SANHUAE130802401\x00\xd2\x00\x00\x0f\xa0\x06\xa4\n\x8c\x06@\x00i\x00d\x00F\x00f\t`\x08\xfc\x00K\x00M\x00Z\x00_\x00\xb9\x00\xbe\x00Z\x00_\x00\x14\x00\x1e\x00^\x00f\x10\xdb\x03\\\x00\x19\x00\x00\x00\x00\x00\x00\x00\x00\x00M\x00\x00\x8c\x1e\tC\x00\xa4\x0f0\x04\xc0\x00<\x00A\x00=\x00K\x00\x02\x00\x02'"
+
+  # read-write unsegmented heat pump 5201 (from thermostat 2001)
+  # thermostat controls heat pump using this
+  # 060b
+  # 0104c400000000
+
+  # read-write unsegmented heat pump 5201 (from thermostat 2001)
+  # thermostat controls heat pump using this
   '00060d': ('UntitledHeatPump0d', [
     (1, Field.UINT8, 'Unknown')
   ]),
 
-  # read-write unsegmented heat pump 0x5201 (from themostat 0x2001)
+  # 060e heat pump 5201 (from thermostat 2001)
+  # 0501050000496c00007162000080730000a61f0000becd036b047904dc05910640036b044c04b00514057801d602d50335042704c501d602d50335042704c5010300004b5f0000868e00009d520000cbc20000fced03e804fb053e0640064003e804fb04fb0640064001ad0367041104c2060e01ad0367041104c2060e
+
+  # read-write unsegmented heat pump 5201 (from thermostat 2001)
+  # thermostat controls heat pump using this
   '000610': ('UntitledHeatPump10', [
-    (4, Field.UNKNOWN)
+    (4, Field.UNKNOWN)  # 00 00 00 20
   ]),
 
-  # read-write unsegmented heat pump 0x5201 (from themostat 0x2001)
+  # read-write unsegmented heat pump 5201 (from thermostat 2001)
+  # thermostat controls heat pump using this
+  # 22b80708000000000000
+#  '000612': ('UntitledHeatPump12', [
+#  ]),
+
+  # read-write unsegmented heat pump 5201 (from thermostat 2001)
   '00061a': ('UntitledHeatPump1a', [
     (1, Field.UINT8, 'Unknown')
   ]),
+
+  # 061d
+  # thermostat controls heat pump using this
+
+  # 061e
+  # thermostat controls heat pump using this
+  # 413f4ccccd07000000
+
+  # 061f (from thermostat 2001)
+  # 004104cccd41233333416333334143333341a41c663d27ef9e030607090043ca25f141433333000000024133333341533333413b3333414b333341050599090a0000000000000000000000000000001e00
+  #
+  # b"\x00\x06\x1f\x00A\x04\xcc\xcdA#33Ac33AC33A\xa4\x1cf='\xef\x9e\x03\x06\x07\t\x00C\xca%\xf1AC33\x00\x00\x00\x02A333AS33A;33AK33A\x05\x05\x99\t\n\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x1e\x00""
+
+  # 0625 (from thermostat 2001)
+  # 0f290000
 
   #######################################################
   # table 30 EECONFIG
