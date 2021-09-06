@@ -155,7 +155,7 @@ class Bus:
     """If data can be read without blocking, or if the last frame was
     something other than ACK06, return False immediately. Otherwise
     write data and return True. Note that this relies on there being a
-    thermostat or SAM in the system to make requests that are ACKed.
+    thermostat in the system to make requests that are ACKed.
     """
     assert data
     if (not self.stream.can_read) and self.lastfunc == Function.ACK06:
