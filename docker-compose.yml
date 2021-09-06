@@ -1,10 +1,10 @@
 # docker-compose.yml for finitude
 #
 # Cookbook:
-#   1. create a directory dedicated to this stack (e.g. ~/finitude-compose)
-#   2. copy this file to ~/finitude-compose/docker-compose.yml
-#   3. create ~/finitude-compose/finitude.yml
-#   4. edit ~/finitude-compose/docker-compose.yml to uncomment
+#   1. create a directory dedicated to this stack (e.g. ~/finitude)
+#   2. copy this file to ~/finitude/docker-compose.yml
+#   3. create ~/finitude/finitude.yml
+#   4. edit ~/finitude/docker-compose.yml to uncomment
 #      the devices: line and one or both of the /dev/ttyUSB lines
 #      if you will be connecting to RS-485 using a USB serial adapter.
 
@@ -14,8 +14,8 @@
 #
 # (-d causes docker-compose to detach)
 #
-# When in ~/finitude-compose, check status with docker-compose ps
-# When in ~/finitude-compose, tail logs with docker logs `docker-compose ps -q` --tail=50
+# When in ~/finitude, check status with docker-compose ps
+# When in ~/finitude, tail logs with docker logs `docker-compose ps -q` --tail=50
 
 version: '3'
 services:
