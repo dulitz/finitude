@@ -170,6 +170,10 @@ REGISTER_INFO = {
   # 030a: 1111 1111 1111 1111 1111 1111 1111
   # 031c: NACK
 
+  # 030a is read from thermostat 2001 (by bootstrap controller 1f01)
+  # at the beginning of the bootstrap sequence to determine whether a
+  # thermostat is active in the system.
+
   # INGUI has documented all registers in RegInfo03
 
   #######################################################
@@ -187,11 +191,12 @@ REGISTER_INFO = {
   '000301': ('RegInfo03', _REGINFO),
 
   # Temperatures is read-only 4001, 5201, 6001, 8001 (read by thermostat 2001)
+  # bootstrap controller 1f01 probes 6001 and 6101 using this
   '000302': ('Temperatures', [
     # types 01, 02, 03, 04 ... 08, 0x14, and 1c from zone damper control
     # types 0x11, 0x14, and 02 from air handler (all open circuit in our systems)
     # types 0x11, 0x12, 0x30, 0x45, 4a, 4b from heat pump (all present on system 2)
-    #    zone temperature sensors 01, 02, ... 08
+    #    zone temperature sensors are types 01, 02, ... 08
     #    OAT (outdoor air temperature) is type 17 (0x11)
     #    OCT (outdoor coil temperature) is type 18 (0x12)
     #    LAT (leaving air temperature) is type 20 (0x14)
@@ -199,8 +204,8 @@ REGISTER_INFO = {
     #    suction temperature is type 48 (0x30)
     #    discharge line temperature is type 69 (0x45)
     #    suction superheat is type 74 (0x4a)
-    #    type 75 (0x4b) is about 6 degrees less than OAT in all conditions
-    # According to Carrier service manual, system operation is not affected
+    #    type 75 (0x4b) is about 8-10 degrees less than OAT in all conditions
+    # According to the Carrier service manual, system operation is not affected
     # by the presence or absence of LAT and HPT -- they are for UI only.
     (0, Field.REPEATING, 'TempSensors'),
     (1, Field.UINT8, 'State'),  # 01 = connected, 04 = open circuit
@@ -216,21 +221,29 @@ REGISTER_INFO = {
   ]),
 
   # 0304 read-only (thermostat reads from heat pump)
+  # 4001: 0019 0000 0118 003c (bootstrap fan running)
   # 5201: 0118 003c 0117 00e9 0541 0000 0044 0000
   # 6001: no response
   # 8001: NACK 0a
 
-  # 0305
+  # 0305 writable (by bootstrap controller 1f01)
   # 5201: NACK 0a
   # 6001, 8001: no response
+  # during bootstrap, broadcasts WRITE of 000000000000000000000000 as first step
 
   # Infinitive: read-only air handler 4001, 4101, 4201
   # 5201: NACK 0a
   # 6001: no response
   # 8001: no response
+  # bootstrap controller 1f01 uses this to probe air handler 4001
   '000306': ('AirHandler06', [
-    (1, Field.UNKNOWN),
-    (1, Field.UINT16, 'BlowerRPM')
+    (1, Field.UINT8, 'Unknown1'),
+    (1, Field.UINT16, 'BlowerRPM'),
+    (1, Field.UINT8, 'Unknown2'),
+    (1, Field.UINT16, 'Unknown3'),
+    (1, Field.UINT16, 'Unknown4'),
+    (1, Field.UINT8, 'Unknown5'),
+    (1, Field.UINT8, 'State'),  # 0x00 when blower off, 0x08 when blower on
   ]),
 
   # read-write unsegmented air handler 0x4001 (from themostat 0x2001)
@@ -258,9 +271,12 @@ REGISTER_INFO = {
   # 6001, 8001: no response
 
   # 030a
-  # 4001, 6001: no response
-  # 5201: 03 03 03 05 05 20 00 30 0001 0000 0000
-  # 8001: 0c 00 00 00 00 00 00 00 0000 0000 0000
+  # bootstrap controller 1f01 uses this to probe 4001, 4201, 5001, 5101, 5201, 5401, 5601
+  # 6001: no response
+  # 4001 system 1: 01 12 12 03 00 1f 00 4b 0000 1008 0114 (bootstrap and later)
+  # 4001 system 2: 01 13 13 03 00 1f 00 4b 0000 1010 0114
+  # 5201         : 03 03 03 05 05 20 00 30 0001 0000 0000
+  # 8001         : 0c 00 00 00 00 00 00 00 0000 0000 0000
 
   # 030b
   # 4001, 5201, 6001: 0000 0000
@@ -272,7 +288,9 @@ REGISTER_INFO = {
   # read-only from all devices including SAM (by thermostat 0x2001)
   # 7 bytes usually all zeroes; heat pump 14 bytes usually all zeroes;
   # SAM 3d 3f 00 0000 0000 alternates with 3f 00 00 0000 0000
-  # '00030d':
+  # bootstrap controller 1f01 probes 4201 with this
+  '00030d': ('Unknown030d', [
+    ]),
 
   # are these counters?
   '00030e': ('UnknownOneByte', [
@@ -365,7 +383,12 @@ REGISTER_INFO = {
   '000316': ('AirHandler16', [
     (1, Field.UINT8, 'State'),  # State & 0x03 != 0 when electric heat is on
     (3, Field.UNKNOWN),
-    (1, Field.UINT16, 'AirflowCFM')
+    (1, Field.UINT16, 'AirflowCFM'),
+    (1, Field.UINT16, 'Unknown0'),
+    (1, Field.UINT16, 'Unknown0078'),
+    (1, Field.UINT16, 'Unknown0100'),
+    (1, Field.UINT8, 'Unknown02'),
+    (1, Field.UINT8, 'UnknownFanSpeed'),
   ]),
 
   # 0317
@@ -393,12 +416,15 @@ REGISTER_INFO = {
   # 4001 5201: NACK 0a
   # 6001, 8001: no response
 
-  # 031b
+  # bootstrap controller 1f01 probes 4201 with this
   # 4001, 8001: NACK 0a
   # 5201: 03
   # 6001: no response
+  '00031b': ('Unknown031b', [
+    (1, Field.UINT8, 'Unknown'),
+  ]),
 
-  # LastStatus is read-only air handler 4001, heat pump 5201 (unread)
+  # LastStatus is read-write unsegmented air handler 4001, heat pump 5201 (unread)
   # 2001, 6001, 8001: NACK 0a
   # 9201: no response
   '00031c': ('LastStatus', [
@@ -453,6 +479,13 @@ REGISTER_INFO = {
   # 0401 RegInfo04
   # 0420 0000000000000000000000000000000000000000
 
+  # ??? which table name for smart sensor 2101..2801
+
+  # read from smart sensor 2101..2801 (by thermostat 2001) during initialization
+  '00041e': ('SmartSensor', [
+    # we know nothing about this
+  ]),
+
   # SSSBCAST has documented all registers in RegInfo04
 
   #######################################################
@@ -474,16 +507,22 @@ REGISTER_INFO = {
   # RegInfo04 is read-only, unread
   '000401': ('RegInfo04', _REGINFO),
 
-  # 0402 5a7896b4781d 358ec4741d 34978da41d b4eaad511d 324813a602 3004ba02c6 (sys 1)
-  # 0402 5a7896b4781d 34b0fee01d 36054aa81d b5e462881d 34a265e902 3005a002cb (sys 2)
+  # 0402
+  # 5a7896b4781d 358ec4741d 34978da41d b4eaad511d 324813a602 3004ba02c6 (sys 1)
+  # 5a7896b4781d 34b0fee01d 36054aa81d b5e462881d 34a265e902 3005a002cb (sys 2)
 
   # read-write unsegmented air handler 0x4001 (from themostat 0x2001)
+  # boostrap controller 1f01 uses this to probe air handler 4201
   '000403': ('UntitledAirHandler03', [
     (4, Field.UNKNOWN)  # 00 01 01 00 when operating or not, COOL mode
   ]),
 
-  # 0404 1078 1006 0207 0000 0000 00000000 000a 0000 (sys 1)
-  # 0404 1078 1206 0a37 0518 04d1 00000000 000a 0605 (sys 2)
+  # 0404
+  # bootstrap controller 1f01 probes 4201 with this
+  # 4001 system 1: 1078 1006 0207 0000 0000 00000000 000a 0000 (incl. bootstrap)
+  #    when sys 1 is running at blower RPM of 171 = 0xab, the value is:
+  #                1078 1006 0a17 0330 00ab 00000000 000a 0000 (tstat phase 4)
+  # 4001 system 2: 0404 1078 1206 0a37 0518 04d1 00000000 000a 0605
 
   # 0405 0100 0000 0000 0000 020000 0000 0000 0000 0100000000 (sys 1)
   # 0405 0110 0000 7800 0500 000000 000f 0019 0000 0100000000 (sys 2)
@@ -491,6 +530,7 @@ REGISTER_INFO = {
   # 0406 0000 0000 0000 0000 0000 0078 01 (sys 1)
   # 0406 0000 0200 051d 0000 0000 0078 01 (sys 2)
 
+  # boostrap controller 1f01 uses this (0407) to probe air handler 4201
   # 0407 0000 (sys 1)
   # 0407 0519 (sys 2)
 
@@ -504,9 +544,17 @@ REGISTER_INFO = {
 
   # 040a-040b NACK 0a
 
+  # boostrap controller 1f01 uses 040b to probe air handler 4201
+
+  # thermostat 2001 uses 040b, 040c, 040f, 0410, 0411, 0413, 0414
+  # to probe air handler 4201
+
   # read-only (?) 4001 (from thermostat 2001).
   # NACKed by 58MVC
   # '00041b'
+
+  # 041c
+  # bootstrap controller 1f01 probes air handler 4001 with this
 
   # VARSPEED has documented all registers in RegInfo04
 
@@ -522,23 +570,38 @@ REGISTER_INFO = {
   # NACK 04 by 8001, 9201
   '000601': ('RegInfo06', _REGINFO),
 
+  # 061e read-write
+  # 000000000000000000
+
+  # LINESET has documented all registers in RegInfo06
+
   #######################################################
   # table 06 VAR COMP for heat pump 5201
 
-  # 0602 (from thermostat 2001)
+  # 0602 read-only (from thermostat 2001)
   # 91002000035cff091f01df090352
 
-  # 0604 (from thermostat 2001)
+  # 0603 read-write
+  #
+
+  # 0604 read-only (from thermostat 2001)
   # 10e010e605dc0af00cdf10e0151805dc099c0af00e4210e0
 
-  # 0605 (from thermostat 2001)
+  # 0605 read-write (from thermostat 2001)
   # thermostat controls heat pump using this
-  # 40a00000010000
+  # 40 a0 00 00 01 00 00 in cooling mode
+  # 00 00 00 00 00 00 00 as third frame of bootstrap
 
-  # 0608 (from thermostat 2001)
+  # 0606 read-only
+
+  # 0607 read-only
+
+  # 0608 read-only (from thermostat 2001)
   # 000064000004c1
 
-  # 060a (from thermostat 2001)
+  # 0609 read-write
+
+  # 060a read-only (from thermostat 2001)
   # 53414e4855415331373038323334303253414e4855414531333038303234303100d200000fa006a40a8c06400069006400460066096008fc004b004d005a005f00b900be005a005f0014001e005e006610db035c00190000000000000000004d00008c1e094300a40f3004c0003c0041003d004b00020002 b'\x00\x06\nSANHUAS170823402SANHUAE130802401\x00\xd2\x00\x00\x0f\xa0\x06\xa4\n\x8c\x06@\x00i\x00d\x00F\x00f\t`\x08\xfc\x00K\x00M\x00Z\x00_\x00\xb9\x00\xbe\x00Z\x00_\x00\x14\x00\x1e\x00^\x00f\x10\xdb\x03\\\x00\x19\x00\x00\x00\x00\x00\x00\x00\x00\x00M\x00\x00\x8c\x1e\tC\x00\xa4\x0f0\x04\xc0\x00<\x00A\x00=\x00K\x00\x02\x00\x02'"
 
   # read-write unsegmented heat pump 5201 (from thermostat 2001)
@@ -546,13 +609,15 @@ REGISTER_INFO = {
   # 060b
   # 0104c400000000
 
+  # 060c read-write
+
   # read-write unsegmented heat pump 5201 (from thermostat 2001)
   # thermostat controls heat pump using this
   '00060d': ('UntitledHeatPump0d', [
     (1, Field.UINT8, 'Unknown')
   ]),
 
-  # 060e heat pump 5201 (from thermostat 2001)
+  # 060e read-only heat pump 5201 (from thermostat 2001)
   # 0501050000496c00007162000080730000a61f0000becd036b047904dc05910640036b044c04b00514057801d602d50335042704c501d602d50335042704c5010300004b5f0000868e00009d520000cbc20000fced03e804fb053e0640064003e804fb04fb0640064001ad0367041104c2060e01ad0367041104c2060e
 
   # read-write unsegmented heat pump 5201 (from thermostat 2001)
@@ -572,48 +637,234 @@ REGISTER_INFO = {
     (1, Field.UINT8, 'Unknown')
   ]),
 
-  # 061d
+  # 061b read-only
+
+  # 061c read-only
+
+  # 061d read-write
   # thermostat controls heat pump using this
 
-  # 061e
+  # 061e read-write
   # thermostat controls heat pump using this
   # 413f4ccccd07000000
 
-  # 061f (from thermostat 2001)
-  # 004104cccd41233333416333334143333341a41c663d27ef9e030607090043ca25f141433333000000024133333341533333413b3333414b333341050599090a0000000000000000000000000000001e00
+  # 061f read-only (from thermostat 2001)
+  # bootstrap controller 1f01 probes heat pumps 5101, 5201, 5601 with this
+  # 00 41 04 cc cd 41 23 33 33 41 63 33 33 41 43 33 33 41 a4 1c 66 3d 27 ef 9e 03 06 07 09 00 43 ca 25 f1 41 43 33 33 00 00 00 02 41 33 33 33 41 53 33 33 41 3b 33 33 41 4b 33 33 41 05 05 99 09 0a 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 1e 00
   #
   # b"\x00\x06\x1f\x00A\x04\xcc\xcdA#33Ac33AC33A\xa4\x1cf='\xef\x9e\x03\x06\x07\t\x00C\xca%\xf1AC33\x00\x00\x00\x02A333AS33A;33AK33A\x05\x05\x99\t\n\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x1e\x00""
+
+  # 0620 read-only
+
+  # 0621 read-write
+
+  # 0622 read-write
+
+  # 0623 read-write
+
+  # 0624 read-only
 
   # 0625 (from thermostat 2001)
   # 0f290000
 
+  # 0626 read-only
+
+  # 0627 read-write
+
+  # 0628 read-only
+
+  # 0629 read-write
+
+  # VAR COMP has documented all registers in RegInfo06
+
+  #######################################################
+  # table 07 ???????? for heat pump 5601 (Greenspeed?)
+
+  # NACK 04 from heat pump 5201
+  '000701': ('RegInfo07', _REGINFO),
+
+  # bootstrap controller 1f01 reads 0704, 0705, 0706, 0707, 0715 to probe
+  # thermostat 2001 reads 0702 to probe
+
   #######################################################
   # table 30 EECONFIG
 
+  # NACK 04 from thermostat 2001
+  # SAM 9201
   '003001': ('RegInfo30', _REGINFO),
+
+  # 3002 read-write
+
+  # 3003 read-write
+
+  # 3004 read-write
+
+  # 3005 read-write
 
   # read-only (?) thermostat 0x2001 (from SAM 0x9201)
   # appears to be NACKed by Touch thermostat firmware 3.60
   # '003005'
 
+  # 3008 read-write
+
+  # 3009 read-write
+
+  # 300a read-write
+
+  # 300b read-write
+
+  # 300c read-write
+
+  # 300d read-write
+
+  # 300e read-write
+
+  # 300f read-write
+
+  # 3010 read-write
+
+  # 3014 read-write
+
+  # 3015 read-write
+
+  # 3016 read-write
+
+  # 3017 read-write
+
+  # 3018 read-write
+
+  # 3019 read-write
+
+  # 301a read-write
+
+  # 301e read-write
+
+  # 301f read-write
+
+  # 3020 read-write
+
+  # 3021 read-write
+
+  # 3022 read-write
+
+  # 3023 read-write
+
+  # 3024 read-write
+
+  # 3028 read-write
+
+  # 3029 read-write
+
+  # 302a read-write
+
+  # 302b read-write
+
+  # 302c read-write
+
+  # 302d read-write
+
+  # 302e read-write
+
+  # 3032 read-write
+
+  # 3033 read-write
+
+  # 3034 read-write
+
+  # 3035 read-write
+
+  # 3036 read-write
+
+  # 3037 read-write
+
+  # 3038 read-write
+
+  # 303c read-write
+
+  # 303d read-write
+
+  # 303e read-write
+
+  # 303f read-write
+
+  # 3040 read-write
+
+  # 3041 read-write
+
+  # 3042 read-write
+
+  # 3046 read-write
+
+  # 3047 read-write
+
+  # 3048 read-write
+
+  # 3049 read-write
+
+  # 304a read-write
+
+  # 304b read-write
+
+  # 304c read-write
+
+  # 3050 read-write
+
+  # 3051 read-write
+
+  # 3052 read-write
+
+  # 3053 read-write
+
+  # 3054 read-write
+
+  # 3055 read-write
+
+  # 3056 read-write
+
+  # EECONFIG has documented all registers in RegInfo30
+
   #######################################################
-  # table 34 [NIM or damper control module] 4 ZONE
+  # table 34 [damper control] 4ZONE ST
+  # table 34 [NIM] I/OSTATE
+  #    the two tables have the same registers, same read/write types, diff lengths
 
   '003401': ('RegInfo34', _REGINFO),
 
-  # HVRState is read/write, non-segmented damper control 0x6001
+  # 3402 read-write (length 6 / length 5)
+
+  # 3403 read-only (length 10 / length 20)
+
+  # HVRState is read-write, non-segmented damper control 0x6001
   # (from thermostat 0x2001).
   # TODO: is this also sent to the NIM in system 1?
   '003404': ('HRVState', [
     (1, Field.UINT8, 'Speed')  # 0 off, 1 low, 2 med, 3 high
   ]),
 
+  # bootstrap controller 1f01 uses this to probe NIM 8001
+  # thermostat 2001 uses this to probe zone damper 6001, 6101
+  # NIM in bootstrap: 010000
+  # zone damper in steady state: 010000
+  # read-only
+  '003405': ('Unknown3405', [
+    (1, Field.UINT8, 'Unknown1'),  # often 1
+    (1, Field.UINT16, 'Unknown0'),  # often 0
+    ]),
+
+  # 3406 read-only (length 24 for 6001, length 4 for 8001)
+
+  # 3407 read-write (both tables length 5)
+
+  # 4ZONE ST and I/OSTATE have documented all registers in RegInfo34
+
   #######################################################
-  # table 3b [thermostat] AI PARMS / NVMINIT
+  # table 3b [thermostat] SAMINFO
 
   '003b01': ('RegInfo3b', _REGINFO),
 
   # Infinitive: read/write segmented; thermostat 0x2001
+  # All fields are 0 during thermostat initialization.
+  # TODO: humidifier state is probably in here somewhere
   '003b02': ('TStatCurrentParams', [
     # first field is not in Infinitive -- may be unique to Touch thermostats
     # may be the set of zones that are configured/active
@@ -670,19 +921,29 @@ REGISTER_INFO = {
     (1, Field.UINT8, 'FanMode')  # segment 0x40
   ]),
 
-  # read/write segmented; thermostat 0x2001 (by SAM).
+  # read-write from thermostat 2001 (by SAM 9201)
+  '003b05': ('TStatUntitled05', [
+    # 3b05 system 1: 01 00 00 64 64 64 01 01 01 64 01
+    # 3b05 system 2: 07 00 00 64 ff 64 01 00 01 64 00
+  ]),
+
+  # read-write segmented from thermostat 2001 (by SAM 9201)
+  # All fields are 0 during thermostat initialization.
   '003b06': ('TStatUntitled', [
-    (1, Field.UINT8, 'ValidZones'),  # some zone bitmap, could be this
-    (11, Field.UNKNOWN), # typically 0, 0, 1, 1, 2, 2, ff, ff, 1, 0, 0
+    (1, Field.UINT8, 'ValidZones'),  # a zone bitmap, could be for validity...
+    (11, Field.UNKNOWN), # typically 0, 0, 1, 1, 2, 2, ff, ff, 1, 0, 0 both systems
     (20, Field.UTF8, 'DealerName'), # not writable for Touch thermostats
     (20, Field.UTF8, 'DealerPhone'), # not writable for Touch thermostats
   ]),
 
-  # read-write SAM 0x9201 (by thermostat 0x2001).
+  # write-only from SAM 9201 (by thermostat 2001)
+  # reads always seem to time out
   # thermostat writes 01 after setpoint update
-  '003b0e': ('SAMUntitled', [
+  '003b0e': ('SamNotification', [
     (1, Field.UINT8, 'Unknown')
   ]),
+
+  # SAMINFO has documented all registers in RegInfo3b
 
   # thermostat/SAM info still to determine:
   #   get humidifier state
@@ -711,7 +972,7 @@ REGISTER_INFO = {
 
   # heat pump info still to determine (from 25VNA8/24VNA9 Service Manual):
   # status:
-  #   Suction Thermistor (on suction tube)
+  #   line voltage
   #   inverter/VSD output frequency and amplitude (?)
   #   outdoor fan motor speed (?) -- between 400 and 1050 RPM
   #   suction pressure transducer used to perform low-pressure cutout, etc.
@@ -719,9 +980,8 @@ REGISTER_INFO = {
   #     - reports "curtailment YES" in the thermostat UI when relay closed
   #   fault code reported in thermostat UI
   #   touch UI service mode: press and HOLD service icon for 10 seconds
-  #   charging mode in Touch UI service mode: service valve subcooling target temp,
-  #     stabilization time, mode/stage(out of 5)/speed (up to 3200 rpm),
-  #     EXV position 0-100%, and indoor airflow.
+  #   mode/stage(out of 5)/speed (up to 3200 rpm),
+  #   EXV position 0-100%, and indoor airflow.
 
   # possible status or control of Pressure Equalizer Valve (used at startup)
 
@@ -736,17 +996,28 @@ REGISTER_INFO = {
   # table 3e DCLEGACY
 
   # Infinitive says this is read-only from heat pump 0x5001 or 0x5101.
+  # bootstrap controller 1f01 probes heat pump 0e01 with this
+  # thermostat 2001 probes heat pump 5001 with this
   # 25VNA8 responds NACK 04
   '003e01': ('LegacyHeatPumpTemperatures', [
     (1, Field.UINT16, 'OutsideTempTimes16'),
     (1, Field.UINT16, 'CoilTempTimes16')
   ]),
 
-  # Infinitive says this is read-only from heat pump 0x5001 or 0x5101.
+  # Infinitive says this is readable from heat pump 0x5001 or 0x5101.
+  # bootstrap controller 1f01 writes 00 as its second action
   # 25VNA8 responds NACK 04
   '003e02': ('LegacyHeatPumpStage', [
     # Shift right by one bit to get the stage number.
     # Higher stage numbers correspond to auxilliary heat on.
     (1, Field.UINT8, 'StageShift1')
+  ]),
+
+  # thermostat 2001 probes heat pump 0e01 and 5001 with this
+  '003e08': ('LegacyHeatPumpUnknown08', [
+  ]),
+
+  # bootstrap controller 1f01 probes heat pump 0e01 with this
+  '003e0a': ('LegacyHeatPumpUnknown0a', [
   ]),
 }
