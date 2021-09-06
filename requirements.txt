@@ -1,6 +1,6 @@
 # pip requirements file for finitude
 #
-# pip install -r req.txt
+# pip install -r requirements.txt
 
 pyserial
 prometheus_client
