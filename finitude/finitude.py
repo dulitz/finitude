@@ -12,9 +12,9 @@ import logging, prometheus_client, re, threading, time, yaml
 
 from queue import SimpleQueue, Empty
 
-import frames
-import registers
-import sniffserver
+from . import frames
+from . import registers
+from . import sniffserver
 
 
 class RequestError(Exception):
@@ -344,7 +344,7 @@ class Finitude:
 
     def start_sniffserver(self, port=0):
         if not port:
-            port = self.config.get('sniffserver', 0)
+            port = self.config.get('sniffserver_port', 0)
         if port:
             for m in self.monitors:
                 m.set_store_frames(True)
@@ -352,7 +352,9 @@ class Finitude:
             sniffserver.start_sniffserver(port, self.monitors)
 
 
-def main(args):
+def main(args, env=None):
+    if env is None:
+        env = {}
     logging.basicConfig(level=logging.INFO)
     configfile = 'finitude.yml'
     if len(args) > 1:
@@ -363,6 +365,26 @@ def main(args):
         LOGGER.info(f'using configuration file {configfile}')
     else:
         LOGGER.info(f'configuration file {configfile} was empty; ignored')
+    port = env.get('PORT')
+    if port:
+        config['port'] = int(port)
+    sniff = env.get('SNIFFSERVER_PORT')
+    if sniff:
+        config['sniffserver_port'] = int(sniff)
+    debug = env.get('DEBUG_LOGGING')
+    if debug:
+        config['debug_logging'] = 1
+    listeners = {}
+    for n in range(10):
+        name = env.get(f'LISTENER_NAME_{n}')
+        path = env.get(f'LISTENER_PATH_{n}')
+        if name and path:
+            listeners[name] = path
+    if listeners:
+        config['listeners'] = listeners
+    if config.get('debug_logging'):
+        logging.setLevel(logging.DEBUG)
+        LOGGER.debug('debug logging is on')
     f = Finitude(config)
     f.start_metrics_server()
     f.start_listeners()
@@ -371,5 +393,5 @@ def main(args):
 
 
 if __name__ == '__main__':
-    import sys
-    sys.exit(main(sys.argv))
+    import sys, os
+    sys.exit(main(sys.argv, os.environ))

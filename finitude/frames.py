@@ -18,7 +18,7 @@ import time
 
 from enum import IntEnum
 
-from registers import FanMode, HvacMode, Field, REGISTER_INFO, REPEATED_8_ZONES
+from .registers import FanMode, HvacMode, Field, REGISTER_INFO, REPEATED_8_ZONES
 
 
 class CarrierError(Exception):

@@ -19,7 +19,7 @@ from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs
 from wsgiref.simple_server import make_server, WSGIServer
 
-import frames
+from . import frames
 
 LOGGER = logging.getLogger('finitude')
 

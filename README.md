@@ -36,9 +36,12 @@ have a nearby computer but you do have Ethernet near one of the
 Carrier devices, you can use an [Ethernet RS-485
 bridge](https://www.amazon.com/gp/product/B07C1TC165).
 
-Soon you'll be able to install finitude from PyPI, using pip. But not
-yet. Soon you'll be able to install an image from Docker Hub. But not
-yet.
+You can install finitude from PyPI using pip:
+```
+pip install finitude
+```
+
+Soon you'll be able to install an image from Docker Hub. But not yet.
 
 ## Based On
 

@@ -31,6 +31,6 @@ RUN mkdir /var/lib/finitude
 
 RUN cp /home/finitude/finitude.yml /var/lib/finitude/
 
-WORKDIR /home/finitude/finitude
+WORKDIR /home/finitude
 
-CMD [ "/home/pyenv/bin/python", "finitude.py", "/var/lib/finitude/finitude.yml" ]
+CMD [ "/home/pyenv/bin/python", "-m", "finitude", "/var/lib/finitude/finitude.yml" ]
