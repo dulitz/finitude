@@ -36,12 +36,25 @@ have a nearby computer but you do have Ethernet near one of the
 Carrier devices, you can use an [Ethernet RS-485
 bridge](https://www.amazon.com/gp/product/B07C1TC165).
 
-You can install finitude from PyPI using pip:
+You can install finitude from PyPI and then run it directly:
 ```
 pip install finitude
+python -m finitude finitude.yml
 ```
 
-Soon you'll be able to install an image from Docker Hub. But not yet.
+From Docker Hub, you can install the image `dulitz/finitude` for
+Raspbian and other version 7 ARM architectures.
+
+## Configuration
+
+If you're running the container, set the environment variables
+LISTENER_NAME_0 and LISTENER_PATH_0, and possibly others like PORT (if
+you want it to serve /metrics on a port other than 8000) and
+SNIFFSERVER_PORT (if you want it to collect unknown frames for
+analysis).
+
+If you're running standalone, edit finitude.yml to set those values,
+and pass the file's path as an argument on the command line.
 
 ## Based On
 
