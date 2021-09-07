@@ -1,5 +1,5 @@
 """
-sniffer.py -- 
+sniffer.py
 
 Reads all packets on the ABCD bus. Tracks all devices which appear as source or destination.
 For each source of a READ packet, tracks destination.
@@ -8,7 +8,7 @@ For each source of an ACK06 packet, tracks register and response data.
 Track all other packets.
 """
 
-import frames
+from finitude import frames
 
 import socket
 import sys
