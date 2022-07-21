@@ -32,21 +32,20 @@ while True:
             print("we didn't write it")
 """
 
-from . import frames
-from . import registers
-from . import finitude
+from . import (finitude, frames, registers, transactions)
 
 
-CarrierError = frames.CarrierError
+FinitudeError = frames.FinitudeError
 
 StreamFactory = frames.StreamFactory
 Bus = frames.Bus
 Function = frames.Function
 AssembledFrame = frames.AssembledFrame
 ParsedFrame = frames.ParsedFrame
-FrameToSend = frames.FrameToSend
 
 FanMode = registers.FanMode
 HvacMode = registers.HvacMode
+
+FrameToSend = transactions.FrameToSend
 
 Finitude = finitude.Finitude

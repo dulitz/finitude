@@ -21,7 +21,7 @@ from enum import IntEnum
 from .registers import FanMode, HvacMode, Field, REGISTER_INFO, REPEATED_8_ZONES
 
 
-class CarrierError(Exception):
+class FinitudeError(Exception):
   pass
 
 
@@ -103,17 +103,23 @@ def StreamFactory(where):
     (host, colon, port_no_default) = rest.partition(':')
     port = int(port_no_default) if colon else 23
     return SocketStream(host, port)
-  raise CarrierError(f'unknown scheme {scheme} in StreamFactory({where})')
+  raise FinitudeError(f'unknown scheme {scheme} in StreamFactory({where})')
 
 
 class Bus:
   """Parses the stream into frames.
 
-  After creating an instance, call read() repeatedly to read an entire frame.
+  After creating an instance, call read() repeatedly to read entire frames.
+
+  If there is a thermostat in the connected system, listen_before_write
+  should be true to reduce interference with its transactions. If there
+  is no thermostat, listen_before_write must be false as otherwise we'll
+  wait forever.
   """
 
-  def __init__(self, stream, report_crc_error=None):
+  def __init__(self, stream, listen_before_write=True, report_crc_error=None):
     self.stream = stream
+    self.listen_before_write = listen_before_write
     self.report_crc_error = report_crc_error
     self.lastfunc = None
     self.buf = b''
@@ -124,14 +130,14 @@ class Bus:
     while len(self.buf) < size:
       readbytes = self.stream.read(size - len(self.buf))
       if not readbytes:
-        raise CarrierError('connection closed [no data] while reading')
+        raise FinitudeError('connection closed [no data] while reading')
       self.buf += readbytes
 
   def read(self):
     """Discard data until we find a valid frame boundary. Return the first valid
     frame, leaving any residual data in self.buf.
 
-    SocketStream may raise socket.timeout. Raises CarrierError if remote end
+    SocketStream may raise socket.timeout. Raises FinitudeError if remote end
     closes the connection.
     """
     # make sure we have enough data in the buffer to check for the size of the frame
@@ -152,20 +158,40 @@ class Bus:
       self.buf = self.buf[1:]
 
   def write(self, data):
-    """If data can be read without blocking, or if the last frame was
-    something other than ACK06, return False immediately. Otherwise
+    """If data can be read without blocking, return False immediately.
+    If the last frame was something other than ACK06 and we are to listen
+    before writing (thermostat-friendly), return False immediately. Otherwise
     write data and return True. Note that this relies on there being a
     thermostat in the system to make requests that are ACKed.
     """
     assert data
-    if (not self.stream.can_read) and self.lastfunc == Function.ACK06:
-      self.stream.write(data)
-      return True
+    if not self.stream.can_read:
+      if self.lastfunc == Function.ACK06 or not self.listen_before_write:
+        self.stream.write(data)
+        return True
     return False
+
+
+class Function(IntEnum):
+  ACK06 = 0x06
+  READ = 0x0b
+  WRITE = 0x0c
+  NACK = 0x15
+  # below this point, we have not seen any of these functions in the wild
+  ACK02 = 0x02
+  CHGTBN = 0x10  # change table name
+  ALARM = 0x1e
+  RDOBJ = 0x22
+  RDVAR = 0x62
+  FORCE = 0x63
+  AUTO = 0x64
+  LIST = 0x75
 
 
 class AssembledFrame:
   def __init__(self, dest, source, func, data=b'', crc=None, pid=0, ext=0):
+    """Dest and source are each bytes objects of length 2. pid and ext
+    are always zero in observation."""
     length = len(data)
     assert length <= 255, length
     self.frame = b''.join([dest, source, bytes([length, pid, ext, func]), data])
@@ -190,12 +216,12 @@ class ParsedFrame:
 
   @property
   def dest(self):
-    """First byte is the address, second byte is the bus. Bus is always 0x1."""
+    """First byte is the device class, second byte is the bus. Bus is always 0x1."""
     return self.framebytes[0:2]
 
   @property
   def source(self):
-    """First byte is the address, second byte is the bus. Bus is always 0x1."""
+    """First byte is the device class, second byte is the bus. Bus is always 0x1."""
     return self.framebytes[2:4]
 
   @property
@@ -239,6 +265,10 @@ class ParsedFrame:
     return hex(address)
 
   def _get_register_info(self):
+    # We assume that only these three functions specify a register.
+    # That's not completely true, as CHGTBN should also specify a register.
+    # But as I've never seen any of the other functions in the wild, we'll
+    # exclude them from the assertion.
     assert (self.func == Function.READ or
             self.func == Function.WRITE or
             self.func == Function.ACK06), self.func
@@ -249,6 +279,9 @@ class ParsedFrame:
     return (f'{name}({k2})', fmt)
 
   def get_register(self):
+    """Returns the bare register name from REGISTER_INFO if any, or a string
+    of length 4 or 6 representing the register's number in hex.
+    """
     if (self.func == Function.READ or
         self.func == Function.WRITE or
         self.func == Function.ACK06) and self.length >= 3:
@@ -258,9 +291,18 @@ class ParsedFrame:
     return None
 
   def get_printable_register(self):
+    """Returns a human-readable string identifying the register. If there is
+    a name for the register in REGISTER_INFO we will return e.g.
+    TStatCurrentParams(3b02). If there is not we return e.g. register(f000).
+    """
     return self._get_register_info()[0]
 
   def parse_register(self):
+    """Returns a three-tuple of the register name (a la get_printable_register()),
+    a dictionary representing the parsed values of the register, and a bytes
+    object representing any bytes left over after parsing. This method currently
+    does not work with WRITE frames on segmented registers.
+    """
     (name, fmt) = self._get_register_info()
     if not fmt:
       return (name, {}, self.data)
@@ -287,6 +329,8 @@ class ParsedFrame:
         cursor = cursor[reps:]
         unknowns += 1
       elif field == Field.REPEATING:
+        # the value of a REPEATING key is a list containing one item
+        # for each repetition, in order
         assert reps == 0, (reps, field, *fieldname)
         assert len(fieldname) == 1, (reps, field, *fieldname)
         dictname = fieldname[0]
@@ -323,21 +367,6 @@ class ParsedFrame:
       data = f'{bytestohex(self.data)} {self.data if len(self.data) > 3 else ""}'
     crc = '' if self.is_crc_valid() else ' CRC BAD'
     return f'to {self.get_printable_address(self.dest)} from {self.get_printable_address(self.source)} len {self.length}{pid}{ext} {self.get_function_name()}({hex(self.func)}) {data}{crc}'
-
-
-class Function(IntEnum):
-  ACK02 = 0x02
-  ACK06 = 0x06
-  READ = 0x0b
-  WRITE = 0x0c
-  NACK = 0x15
-  ALARM = 0x1e
-  CHGTBN = 0x10  # change table name
-  RDOBJ = 0x22
-  RDVAR = 0x62
-  FORCE = 0x63
-  AUTO = 0x64
-  LIST = 0x75
 
 
 def bytestohex(rbytes):
@@ -392,84 +421,3 @@ class CRC16:
     for b in bytesin:
       crc = self._calculate_one_cycle(b, crc)
     return crc
-
-
-class FrameToSend:
-  def __init__(self, bus, source, dest, funcstr, register='', mask='', data=''):
-    self.bus = bus
-    for f in Function:
-      if f.name == funcstr:
-        func = f.value
-        break
-    else:
-      raise Exception(f'unknown function {funcstr}')
-    regb = (bytes([0]) + FrameToSend.convert_word_to_bytes(register)) if register else b''
-    maskb = (bytes([0]) + FrameToSend.convert_word_to_bytes(mask)) if mask else b''
-    datab = bytes([int(hi + lo, 16) for (hi, lo) in zip(*([iter(data)]*2))])
-    self.frame = AssembledFrame(FrameToSend.convert_word_to_bytes(dest),
-                                FrameToSend.convert_word_to_bytes(source),
-                                func,
-                                regb + maskb + datab)
-    self.sent = False
-
-  def process(self, frame):
-    """Send frame if we haven't sent it yet and if we can. If a sent frame
-    has been acknowledged, return True; if not return False.
-    """
-    if frame.func == Function.ACK06 and not self.sent:
-      self.sent = self.bus.write(self.frame.framebytes)
-      if not self.sent:
-        print('failed to send frame, retrying...', file=sys.stderr)
-    if self.sent and frame.source == self.frame.dest and frame.dest == self.frame.source and frame.func in (Function.ACK06, Function.ACK02, Function.NACK):
-      print(f'transaction complete with {frame}', file=sys.stderr)
-      return True
-    return False
-
-  @staticmethod
-  def convert_word_to_bytes(word):
-    if len(addr) != 4:
-      raise CarrierError(f'{addr} is invalid')
-    assert int(addr, 16)  # raises ValueError if not valid hex
-    return bytes([0, int(addr[0:2], 16), int(addr[2:], 16)])
-
-def main(args):
-  """
-  All args except the first are ignored. The first is a special file or URI of
-  the RS-485 bus adapter. We write nothing to the bus and simply print one line
-  for each frame we see on the bus.
-  """
-  if len(args) != 2 and (len(args) < 5 or len(args) > 8):
-    print(f'''Usage: {args[0]} URI_of_bus_adapter dest source func data
-Usage: {args[0]} URI_of_bus_adapter dest source READ register
-Usage: {args[0]} URI_of_bus_adapter dest source WRITE register [mask] data''', file=sys.stderr)
-    return 1
-  stream = StreamFactory(args[1])
-  bus = Bus(stream, report_crc_error=lambda: print('.', end='', file=sys.stderr))
-  if len(args) >= 5:
-    (dest, source, func, data) = (args[2], args[3], args[4], args[5])
-    register = ''
-    mask = ''
-    if func == 'READ':
-      assert len(args) == 6, args
-      register = data
-      data = ''
-    elif func == 'WRITE':
-      assert len(args) == 8, args
-      register = data
-      mask = args[6]
-      data = args[7]
-    else:
-      assert len(args) == 5, args
-    pending = FrameToSend(bus, dest, source, func, register, mask, data)
-  else:
-    pending = None
-
-  while True:
-    frame = ParsedFrame(bus.read())
-    print(frame)
-    if pending and pending.process(frame):
-      pending = None
-
-if __name__ == '__main__':
-    import sys
-    sys.exit(main(sys.argv))

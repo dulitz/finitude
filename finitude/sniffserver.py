@@ -34,7 +34,7 @@ class _ThreadingWSGISniffServer(ThreadingMixIn, WSGIServer):
 
 def convert_word_to_bytes(word):
     if len(word) != 4:
-        raise frames.CarrierError(f'{word} is invalid')
+        raise frames.FinitudeError(f'{word} is invalid')
     assert int(word, 16)  # raises ValueError if not valid hex
     return bytes([int(word[0:2], 16), int(word[2:], 16)])
 
