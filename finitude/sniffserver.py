@@ -46,6 +46,8 @@ def start_sniffserver(port, monitors):
         accept_header = environ.get('HTTP_ACCEPT')
         path = environ['PATH_INFO']
         params = parse_qs(environ.get('QUERY_STRING', ''))
+        status = '500 Internal Error'
+        header = ('', '')
         if path == '/favicon.ico':
             # Serve empty response for browsers
             status = '200 OK'
