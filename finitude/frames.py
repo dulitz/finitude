@@ -15,6 +15,8 @@ import socket
 import struct
 import sys
 import time
+import os
+from io import SEEK_END
 
 from enum import IntEnum
 
@@ -27,7 +29,7 @@ class CarrierError(Exception):
 
 class SerialStream:
   """Connect to a serial port."""
-  
+
   def __init__(self, path):
     self.path = path
     self.ser = None
@@ -52,9 +54,39 @@ class SerialStream:
     self.ser = None
 
 
+class FileStream:
+  """Connect to a local file."""
+
+  def __init__(self, path):
+    self.path = path
+    self.file = None
+    self.open()
+
+  def open(self):
+    assert self.file is None, self.file
+    self.file = open(self.path, mode='rb')
+
+  def read(self, numbytes):
+    return self.file.read(numbytes)
+
+  def write(self, data):
+    self.file.write(data)
+
+  @property
+  def can_read(self):
+    return len(self.file.peek(1)) > 0
+
+  def close(self):
+    self.file.close()
+    self.file = None
+
+  def is_in_range(self):
+    return True
+
+
 class SocketStream:
   """Connect to a TCPv4 socket."""
-  
+
   def __init__(self, host, port, timeout=10):
     # create a blocking TCP connection
     self.hostport = (host, port)
@@ -99,6 +131,10 @@ def StreamFactory(where):
     return SerialStream(where)
   if scheme == 'file':
     return SerialStream(rest)
+  if scheme == 'localfile':
+    return FileStream(rest)
+  if scheme == 'filerange':
+    return FileStreamRange(rest)
   if scheme == 'telnet':
     (host, colon, port_no_default) = rest.partition(':')
     port = int(port_no_default) if colon else 23
@@ -134,11 +170,12 @@ class Bus:
     SocketStream may raise socket.timeout. Raises CarrierError if remote end
     closes the connection.
     """
-    # make sure we have enough data in the buffer to check for the size of the frame
-    self._read_until(10)
-	
+
     crcer = CRC16()
     while True:
+      # make sure we have enough data in the buffer to check for the size of the frame
+      if len(self.buf) < 10:
+        self._read_until(10)
       frame_len = self.buf[4] + 10
       self._read_until(frame_len)
       frame = self.buf[:frame_len]
