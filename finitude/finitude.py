@@ -316,7 +316,7 @@ class HvacMonitor:
                                   frames.Function.ACK02,
                                   frames.Function.NACK):
                     self._process_send_queue(frame)
-            except (OSError, frames.CarrierError):
+            except (OSError, frames.FinitudeError):
                 LOGGER.exception('exception in frame processor, reconnecting')
                 self.stream, self.bus = None, None
                 time.sleep(1) # rate limiting
